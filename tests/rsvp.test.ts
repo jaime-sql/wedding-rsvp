@@ -6,13 +6,19 @@ import { buildIcs } from '../src/lib/ics';
 import { en, es, type MessageKey } from '../src/lib/i18n';
 import {
   adminExport,
+  adminLockout,
   adminSummary,
   applySubmit,
   formatDeadline,
   formatPlaces,
   formatWeddingDate,
+  replySummary,
+  seatsForFamily,
+  exportGuestName,
   getInvite,
   hasUnanswered,
+  passphraseMatches,
+  reminderText,
   isPastDeadline,
   missingPlusOneName,
   showPlusOneName,
@@ -68,6 +74,32 @@ describe('seats, deadline, and idempotent submits', () => {
     expect(formatPlaces(2, 3, 'es')).toBe('2 de 3 lugares');
     expect(formatPlaces(2, 3, 'en')).toBe('2 of 3 seats');
     expect(formatPlaces(1, 1, 'es')).toBe('1 de 1 lugar');
+  });
+
+  it('formats the household seat line in singular and plural', () => {
+    expect(seatsForFamily(3, 'es')).toBe('3 lugares para su familia');
+    expect(seatsForFamily(3, 'en')).toBe('3 seats for your family');
+    expect(seatsForFamily(1, 'es')).toBe('1 lugar para su familia');
+    expect(seatsForFamily(1, 'en')).toBe('1 seat for your family');
+  });
+
+  it('summarizes yes and no guests, including a nameless plus-one', () => {
+    const guests = [
+      { name: 'Lucía García', is_plus_one: false, status: 'yes' as const },
+      { name: 'Pablo García', is_plus_one: false, status: 'yes' as const },
+      { name: '  ', is_plus_one: true, status: 'no' as const },
+    ];
+    expect(replySummary(guests, 'es')).toBe('Lucía García, Pablo García: Sí · Acompañante: No');
+    expect(replySummary(guests, 'en')).toBe('Lucía García, Pablo García: Yes · Plus-one: No');
+    expect(
+      replySummary(
+        [
+          { name: 'Sofía Martín', is_plus_one: false, status: 'no' },
+          { name: '', is_plus_one: true, status: 'pending' },
+        ],
+        'en',
+      ),
+    ).toBe('Sofía Martín: No · Plus-one: Pending');
   });
 
   it('shows a plus-one name only after yes', () => {
@@ -173,10 +205,22 @@ describe('admin pin', () => {
   const state = createInitialState();
 
   it('returns nothing for a wrong pin', () => {
+    expect(passphraseMatches('0000', DEMO_PIN)).toBe(false);
+    expect(passphraseMatches('hacienda-demo ', DEMO_PIN)).toBe(false);
+    expect(passphraseMatches(DEMO_PIN, DEMO_PIN)).toBe(true);
+    expect(DEMO_PIN.length).toBeGreaterThanOrEqual(12);
     expect(adminSummary(state, '0000', origin, base, DEMO_PIN)).toBeNull();
     expect(adminSummary(state, '', origin, base, DEMO_PIN)).toBeNull();
-    expect(adminSummary(state, '2468 ', origin, base, DEMO_PIN)).toBeNull();
+    expect(adminSummary(state, 'hacienda-demo ', origin, base, DEMO_PIN)).toBeNull();
     expect(adminExport(state, 'nope', DEMO_PIN)).toBeNull();
+  });
+
+  it('locks the sixth call even when the passphrase is right', () => {
+    expect(adminLockout(0, false)).toEqual({ ok: false, error: 'wrong_passphrase', remaining: 4 });
+    expect(adminLockout(4, false)).toEqual({ ok: false, error: 'wrong_passphrase', remaining: 0 });
+    expect(adminLockout(5, true)).toEqual({ ok: false, error: 'locked' });
+    expect(adminLockout(5, false)).toEqual({ ok: false, error: 'locked' });
+    expect(adminLockout(4, true)).toEqual({ ok: true });
   });
 
   it('returns counts and WhatsApp reminders for the matching pin', () => {
@@ -191,11 +235,21 @@ describe('admin pin', () => {
     const text = new URL(garcia?.whatsapp_url ?? '').searchParams.get('text');
     expect(text).toContain(`${origin}${base}/i/?t=${TOKENS.garcia}`);
     expect(text).toContain('Hola, familia García');
+    expect(text).toContain('Les recordamos');
+    expect(text).not.toContain('Os recordamos');
+    expect(reminderText('es', 'García', 'Elena y Mateo', `${origin}${base}/i/?t=${TOKENS.garcia}`)).toContain(
+      'Les recordamos',
+    );
     const english = new URL(martin?.whatsapp_url ?? '').searchParams.get('text');
     expect(english).toContain('Hello, Martín family');
     expect(english).toContain(TOKENS.martin);
     const rows = adminExport(state, DEMO_PIN, DEMO_PIN);
     expect(rows?.some((row) => row.guest_name === 'Lucía García')).toBe(true);
+    expect(rows?.some((row) => row.guest_name === 'Acompañante de García')).toBe(true);
+    expect(rows?.some((row) => row.guest_name === 'Acompañante de Martín')).toBe(true);
+    expect(rows?.some((row) => row.guest_name.trim() === '')).toBe(false);
+    expect(exportGuestName('', true, 'Martín')).toBe('Acompañante de Martín');
+    expect(exportGuestName('Ana Ruiz', true, 'García')).toBe('Ana Ruiz');
   });
 });
 
@@ -209,8 +263,17 @@ describe('copy, csv, and calendar', () => {
       expect(en[key].trim().length).toBeGreaterThan(0);
       expect(placeholders(en[key])).toEqual(placeholders(es[key]));
     }
-    expect(es.demoStrip).toBe('«Datos de ejemplo»');
+    expect(es.demoStrip).toBe('Datos de ejemplo');
     expect(en.demoStrip).toBe('Sample data');
+    expect(es.wrongPassphrase).toBe('Clave incorrecta. Le quedan {remaining} intentos.');
+    expect(es.wrongPassphraseOne).toBe('Clave incorrecta. Le queda {remaining} intento.');
+    expect(es.adminLocked).toBe('Demasiados intentos. Intente de nuevo en 15 minutos.');
+    expect(en.wrongPassphrase).toBe('Wrong passphrase. You have {remaining} attempts left.');
+    expect(en.adminLocked).toBe('Too many attempts. Try again in 15 minutes.');
+    const spanish = Object.values(es).join('\n');
+    for (const old of ['Abrid', 'Elegid', 'Os recordamos', 'vuestra', 'Podéis', 'Volved', 'Entrad', 'Revisad', 'Intentad', 'Escribid']) {
+      expect(spanish).not.toContain(old);
+    }
     const errors = `${es.invalidBody} ${en.invalidBody} ${es.missingBody} ${en.adminEmpty}`;
     expect(errors).not.toContain('García');
     expect(errors).not.toContain('López');
@@ -268,7 +331,7 @@ describe('repo contract', () => {
 
   it('locks tables and exposes only the anon RPCs', () => {
     expect(migration.toLowerCase()).not.toContain('create policy');
-    for (const table of ['wedding', 'invite', 'guest', 'message']) {
+    for (const table of ['wedding', 'invite', 'guest', 'message', 'admin_attempts']) {
       expect(migration).toContain(`alter table public.${table} enable row level security`);
       expect(migration).toContain(`revoke all on table public.${table} from public, anon, authenticated`);
     }
@@ -283,6 +346,16 @@ describe('repo contract', () => {
     expect(migration).toContain("error', 'deadline'");
     expect(migration).toContain("error', 'seats'");
     expect(migration).not.toContain('execute format');
+    expect(migration).toContain('admin_attempts');
+    expect(migration).toContain('pg_catalog.pg_sleep(1)');
+    expect(migration).toContain("'wrong_passphrase'");
+    expect(migration).toContain("'locked'");
+    expect(migration).toContain('Les recordamos');
+    expect(migration).toContain('Acompañante de ');
+    expect(migration).not.toContain('grant execute on function public.admin_gate');
+    const sqlTest = readFileSync('supabase/tests/rsvp.sql', 'utf8');
+    expect(sqlTest).toContain('6th call is refused even with the right passphrase');
+    expect(sqlTest).toContain("public.admin_summary('hacienda-demo')");
   });
 
   it('seeds the demo wedding, three invites, and a hashed PIN', () => {
@@ -292,7 +365,7 @@ describe('repo contract', () => {
     expect(seed).toContain('Hacienda Los Olivos (DEMO)');
     expect(seed).toContain('2027-06-20');
     expect(seed).toContain('2027-05-01T21:59:00Z');
-    expect(seed).toContain("extensions.crypt('2468'");
+    expect(seed).toContain("extensions.crypt('hacienda-demo'");
     expect(seed).toContain('false');
     expect(seed).toContain('Lucía García');
   });

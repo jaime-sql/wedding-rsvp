@@ -3,6 +3,6 @@
   "include": [".astro/types.d.ts", "src", "tests"],
   "exclude": ["dist"],
   "compilerOptions": {
-    "types": []
+    "types": ["node"]
   }
 }

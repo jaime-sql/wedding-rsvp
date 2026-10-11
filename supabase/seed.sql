@@ -1,10 +1,10 @@
--- Sample wedding. DEMO values only. Apply after the migration, and change the PIN
--- before anyone real uses the site:
+-- Sample wedding. DEMO values only. Apply after the migration, and change the
+-- passphrase before anyone real uses the site. It must be at least 12 characters:
 --   update public.wedding
---   set admin_pin_hash = extensions.crypt('a-new-pin', extensions.gen_salt('bf', 8))
+--   set admin_pin_hash = extensions.crypt('a-new-passphrase', extensions.gen_salt('bf', 8))
 --   where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
 --
--- Demo PIN: 2468
+-- Demo passphrase: hacienda-demo
 -- Invite links (production base):
 --   García  https://jaime-sql.github.io/wedding-rsvp/i/?t=K7mQ2pL9xR4nW8vT3cY6hJd
 --   López   https://jaime-sql.github.io/wedding-rsvp/i/?t=N3sD8fH1jM6qP0wZ5yC2uBx
@@ -42,7 +42,7 @@ insert into public.wedding (
     {"id":"vegetariano","es":"Vegetariano","en":"Vegetarian"}
   ]'::jsonb,
   'es',
-  extensions.crypt('2468', extensions.gen_salt('bf', 8))
+  extensions.crypt('hacienda-demo', extensions.gen_salt('bf', 8))
 );
 
 insert into public.invite (id, wedding_id, household_name, token, seats_allowed, lang) values

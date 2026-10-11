@@ -23,6 +23,7 @@ declare
   after_count integer;
   other_name text;
   payload jsonb;
+  i integer;
 begin
   if public.get_invite(null) is not null then
     raise exception 'null token leaked a result';
@@ -136,17 +137,33 @@ begin
   set rsvp_deadline = '2099-01-01T00:00:00Z'
   where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
 
-  if public.admin_summary('0000') is not null then
-    raise exception 'wrong pin returned data';
+  v := public.admin_summary('0000');
+  if v->>'error' <> 'wrong_passphrase' then
+    raise exception 'wrong passphrase should be explicit, got %', v;
   end if;
-  if public.admin_summary('') is not null then
-    raise exception 'empty pin returned data';
+  if jsonb_exists(v, 'households') or jsonb_exists(v, 'counts') or jsonb_exists(v, 'couple_names') then
+    raise exception 'wrong passphrase returned data';
   end if;
-  if public.admin_export('nope') is not null then
-    raise exception 'wrong pin export returned data';
+  if (v->>'remaining')::int <> 4 then
+    raise exception 'expected 4 attempts left, got %', v;
+  end if;
+  if v::text like '%García%' or v::text like '%$2%' or v::text like '%admin_pin_hash%' or v::text like '%hacienda-demo%' then
+    raise exception 'wrong passphrase leaked data';
   end if;
 
-  v := public.admin_summary('2468');
+  v := public.admin_summary('');
+  if v->>'error' <> 'wrong_passphrase' or (v->>'remaining')::int <> 3 then
+    raise exception 'empty passphrase should count as a failure, got %', v;
+  end if;
+
+  v := public.admin_export('nope');
+  if v->>'error' <> 'wrong_passphrase' or jsonb_typeof(v) = 'array' or (v->>'remaining')::int <> 2 then
+    raise exception 'wrong passphrase export returned data, got %', v;
+  end if;
+
+  delete from public.admin_attempts;
+
+  v := public.admin_summary('hacienda-demo');
   if v is null then
     raise exception 'correct pin returned nothing';
   end if;
@@ -174,12 +191,60 @@ begin
     raise exception 'an answered invite should not get a reminder';
   end if;
 
-  v := public.admin_export('2468');
+  v := public.admin_export('hacienda-demo');
   if v is null or jsonb_typeof(v) <> 'array' then
     raise exception 'export should be a json array';
   end if;
   if v::text not like '%García%' then
     raise exception 'export missing García';
+  end if;
+  if v::text not like '%Acompañante de Martín%' then
+    raise exception 'blank plus-one should export with the household name';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(v) as elem
+    where btrim(elem->>'guest_name') = ''
+  ) then
+    raise exception 'export has a blank guest name';
+  end if;
+
+  -- 6th call is refused even with the right passphrase.
+  delete from public.admin_attempts;
+  for i in 1..5 loop
+    v := public.admin_summary('not-the-passphrase');
+    if v->>'error' <> 'wrong_passphrase' then
+      raise exception 'failure % should be a wrong passphrase, got %', i, v;
+    end if;
+    if (v->>'remaining')::int <> 5 - i then
+      raise exception 'failure % left the wrong remaining count: %', i, v;
+    end if;
+    if jsonb_exists(v, 'households') or v::text like '%García%' or v::text like '%Elena%' then
+      raise exception 'failure % returned wedding data', i;
+    end if;
+  end loop;
+
+  if (select count(*) from public.admin_attempts) <> 5 then
+    raise exception 'expected 5 recorded failures';
+  end if;
+
+  v := public.admin_summary('hacienda-demo');
+  if v->>'error' <> 'locked' then
+    raise exception '6th call should be locked even with the right passphrase, got %', v;
+  end if;
+  if jsonb_exists(v, 'counts') or jsonb_exists(v, 'households') or jsonb_exists(v, 'couple_names') then
+    raise exception 'locked summary returned data';
+  end if;
+  if v::text like '%García%' or v::text like '%wa.me%' or v::text like '%hacienda-demo%' then
+    raise exception 'locked summary leaked data';
+  end if;
+  if (select count(*) from public.admin_attempts) <> 5 then
+    raise exception 'locked call should not record another failure';
+  end if;
+
+  v := public.admin_export('hacienda-demo');
+  if v->>'error' <> 'locked' or jsonb_typeof(v) = 'array' then
+    raise exception 'locked export should return no rows, got %', v;
   end if;
 end
 $$;
@@ -231,8 +296,24 @@ begin
   end;
 
   begin
-    perform public.wedding_for_pin('2468');
+    perform 1 from public.admin_attempts;
+    raise exception 'anon read admin_attempts';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+
+  begin
+    perform public.wedding_for_pin('hacienda-demo');
     raise exception 'anon called wedding_for_pin';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+
+  begin
+    perform public.admin_gate('hacienda-demo');
+    raise exception 'anon called admin_gate';
   exception
     when insufficient_privilege then
       null;

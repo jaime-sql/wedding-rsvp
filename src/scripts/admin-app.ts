@@ -2,7 +2,7 @@ import { demoMode, fetchAdminExport, fetchAdminSummary } from '../lib/api';
 import { guestsToCsv } from '../lib/csv';
 import { readLang, t, writeLang, type Lang } from '../lib/i18n';
 import { formatDeadline, formatWeddingDate, sampleMarks, safeHttpUrl } from '../lib/rsvp';
-import type { AdminSummary, RsvpStatus, SummaryGuest, SummaryHousehold } from '../lib/types';
+import type { AdminAuthError, AdminSummary, RsvpStatus, SummaryGuest, SummaryHousehold } from '../lib/types';
 import { downloadText, escapeHtml } from './download';
 
 type Filter = 'all' | 'yes' | 'no' | 'pending';
@@ -28,7 +28,7 @@ export function mountAdmin(root: HTMLElement): void {
   let lang = readLang();
   let pin = '';
   let summary: AdminSummary | null = null;
-  let denied = false;
+  let authError: AdminAuthError | null = null;
   let filter: Filter = 'all';
   let busy = false;
   let samplePin = '';
@@ -44,14 +44,24 @@ export function mountAdmin(root: HTMLElement): void {
       <button type="button" data-action="lang" data-lang="en" aria-pressed="${lang === 'en'}">${escapeHtml(t(lang, 'langEn'))}</button>
     </div>`;
 
+  const authMessage = (): string => {
+    if (!authError) return '';
+    if (authError.error === 'locked') return t(lang, 'adminLocked');
+    if (authError.error === 'wrong_passphrase') {
+      const key = authError.remaining === 1 ? 'wrongPassphraseOne' : 'wrongPassphrase';
+      return t(lang, key, { remaining: authError.remaining });
+    }
+    return t(lang, 'adminEmpty');
+  };
+
   const loginView = (): string => `
     <header class="top">${langSwitch()}</header>
     <main>
       <h1>${escapeHtml(t(lang, 'adminTitle'))}</h1>
       <p class="lede">${escapeHtml(t(lang, 'adminLead'))}</p>
-      ${denied ? `<p class="alert" role="alert">${escapeHtml(t(lang, 'adminEmpty'))}</p>` : ''}
+      ${authError ? `<p class="alert" role="alert">${escapeHtml(authMessage())}</p>` : ''}
       <label class="field" for="pin">${escapeHtml(t(lang, 'pinLabel'))}
-        <input id="pin" data-field="pin" type="password" autocomplete="current-password" maxlength="80" value="${escapeHtml(pin)}" ${denied ? 'aria-invalid="true"' : ''}>
+        <input id="pin" data-field="pin" type="password" autocomplete="current-password" maxlength="72" value="${escapeHtml(pin)}" ${authError ? 'aria-invalid="true"' : ''}>
       </label>
       ${samplePin ? `<p class="muted" style="margin-top:8px">${escapeHtml(t(lang, 'pinHint', { pin: samplePin }))}</p>` : ''}
     </main>
@@ -88,7 +98,7 @@ export function mountAdmin(root: HTMLElement): void {
           })
           .join('');
         const reminder =
-          (filter === 'all' || filter === 'pending') && household.pending && link
+          household.pending && link
             ? `<a class="btn" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${escapeHtml(t(lang, 'whatsapp'))}<span class="sr-only"> (${escapeHtml(t(lang, 'newTab'))})</span></a>`
             : '';
         return `<article class="hcard"><h2>${escapeHtml(t(lang, 'familyLabel', { household: household.household_name }))}</h2><ul class="plain">${people}</ul>${reminder}</article>`;
@@ -96,24 +106,30 @@ export function mountAdmin(root: HTMLElement): void {
       .join('');
 
     const tableRows = rows
-      .flatMap((household) =>
-        household.guests.map((guest) => {
-          const link = safeHttpUrl(household.whatsapp_url);
-          const reminder =
-            household.pending && link
-              ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${escapeHtml(t(lang, 'whatsapp'))}</a>`
-              : escapeHtml(t(lang, 'dash'));
-          return `<tr>
+      .map((household) => {
+        const link = safeHttpUrl(household.whatsapp_url);
+        const reminder =
+          household.pending && link
+            ? `<a class="btn compact" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${escapeHtml(t(lang, 'whatsapp'))}<span class="sr-only"> (${escapeHtml(t(lang, 'newTab'))})</span></a>`
+            : escapeHtml(t(lang, 'dash'));
+        return household.guests
+          .map((guest, index) => {
+            const reminderCell =
+              index === 0
+                ? `<td class="reminder" rowspan="${household.guests.length}">${reminder}</td>`
+                : '';
+            return `<tr>
             <td>${escapeHtml(household.household_name)}</td>
             <td>${escapeHtml(guest.name || t(lang, 'plusOneLabel'))}</td>
             <td>${escapeHtml(statusLabel(guest.status, lang))}</td>
             <td>${escapeHtml(guest.meal || t(lang, 'dash'))}</td>
             <td>${escapeHtml(guest.allergies || t(lang, 'dash'))}</td>
             <td>${escapeHtml(guest.is_plus_one ? t(lang, 'yes') : t(lang, 'no'))}</td>
-            <td>${reminder}</td>
+            ${reminderCell}
           </tr>`;
-        }),
-      )
+          })
+          .join('');
+      })
       .join('');
 
     const filters: Filter[] = ['all', 'yes', 'no', 'pending'];
@@ -139,6 +155,9 @@ export function mountAdmin(root: HTMLElement): void {
           <article class="count-card"><strong>${data.counts.no}</strong><span>${escapeHtml(t(lang, 'countsNo'))}</span></article>
           <article class="count-card"><strong>${data.counts.pending}</strong><span>${escapeHtml(t(lang, 'countsPending'))}</span></article>
         </section>
+        <div class="export-row">
+          <button type="button" class="btn" id="primary-action" data-action="export">${escapeHtml(t(lang, 'exportCsv'))}</button>
+        </div>
         <div class="filters" role="group" aria-label="${escapeHtml(t(lang, 'filterLabel'))}">
           ${filters
             .map(
@@ -164,10 +183,7 @@ export function mountAdmin(root: HTMLElement): void {
           </thead>
           <tbody>${tableRows}</tbody>
         </table>
-      </main>
-      <div class="dock">
-        <button type="button" class="btn" id="primary-action" data-action="export">${escapeHtml(t(lang, 'exportCsv'))}</button>
-      </div>`;
+      </main>`;
   };
 
   root.addEventListener('click', (event) => {
@@ -196,35 +212,35 @@ export function mountAdmin(root: HTMLElement): void {
       const field = root.querySelector<HTMLInputElement>('#pin');
       pin = field?.value ?? '';
       busy = true;
-      denied = false;
+      authError = null;
       render();
       void fetchAdminSummary(pin)
-        .then((data) => {
+        .then((result) => {
           busy = false;
-          if (!data) {
+          if (!result.ok) {
             summary = null;
-            denied = true;
+            authError = result;
             pin = '';
             render();
             return;
           }
-          summary = data;
-          denied = false;
+          summary = result.summary;
+          authError = null;
           render();
         })
         .catch(() => {
           busy = false;
           summary = null;
-          denied = true;
+          authError = { ok: false, error: 'unavailable' };
           pin = '';
           render();
         });
       return;
     }
     if (action === 'export') {
-      void fetchAdminExport(pin).then((rows) => {
-        if (!rows) return;
-        downloadText(t(lang, 'csvFile'), guestsToCsv(rows, lang), 'text/csv;charset=utf-8');
+      void fetchAdminExport(pin).then((result) => {
+        if (!result.ok) return;
+        downloadText(t(lang, 'csvFile'), guestsToCsv(result.rows, lang), 'text/csv;charset=utf-8');
       });
     }
   });
@@ -237,7 +253,7 @@ export function mountAdmin(root: HTMLElement): void {
   const boot = async () => {
     if (demoMode) {
       const mod = await import('../lib/demo-data');
-      samplePin = mod.DEMO_PIN;
+      samplePin = mod.DEMO_PASSPHRASE;
     }
     render();
   };

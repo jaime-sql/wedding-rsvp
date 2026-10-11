@@ -1,7 +1,8 @@
 import type { Lang } from './i18n';
 import type { ExportRow, GuestRecord, MealOption, RsvpStatus, WeddingInfo } from './types';
 
-export const DEMO_PIN = '2468';
+export const DEMO_PASSPHRASE = 'hacienda-demo';
+export const DEMO_PIN = DEMO_PASSPHRASE;
 export const DEMO_WEDDING_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
 export const PUBLIC_SITE = 'https://jaime-sql.github.io/wedding-rsvp';
 
@@ -72,7 +73,15 @@ function withoutPosition(rows: Array<GuestRecord & { position: number }>): Guest
   return rows
     .slice()
     .sort((a, b) => a.position - b.position)
-    .map(({ position: _position, ...rest }) => rest);
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      is_plus_one: row.is_plus_one,
+      status: row.status,
+      meal: row.meal,
+      allergies: row.allergies,
+      updated_at: row.updated_at,
+    }));
 }
 
 export function createInitialState(): DemoState {

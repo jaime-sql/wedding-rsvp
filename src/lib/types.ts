@@ -92,3 +92,12 @@ export interface ExportRow {
   allergies: string | null;
   is_plus_one: boolean;
 }
+
+export type AdminAuthError =
+  | { ok: false; error: 'wrong_passphrase'; remaining: number }
+  | { ok: false; error: 'locked' }
+  | { ok: false; error: 'unavailable' };
+
+export type AdminSummaryResult = { ok: true; summary: AdminSummary } | AdminAuthError;
+
+export type AdminExportResult = { ok: true; rows: ExportRow[] } | AdminAuthError;

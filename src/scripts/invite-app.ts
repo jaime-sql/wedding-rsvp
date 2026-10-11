@@ -6,6 +6,8 @@ import {
   formatDeadline,
   formatPlaces,
   formatWeddingDate,
+  replySummary,
+  seatsForFamily,
   hasUnanswered,
   isAcceptableToken,
   isPastDeadline,
@@ -105,8 +107,9 @@ export function mountInvite(root: HTMLElement): void {
   const errorBlock = (): string =>
     formError ? `<p class="alert" role="alert">${escapeHtml(formError)}</p>` : '';
 
-  const dock = (label: string, action: string): string => `
+  const dock = (label: string, action: string, note = ''): string => `
     <div class="dock">
+      ${note ? `<p class="seat-note">${escapeHtml(note)}</p>` : ''}
       <button type="button" class="btn" id="primary-action" data-action="${action}" ${busy ? 'disabled' : ''}>${escapeHtml(label)}</button>
     </div>`;
 
@@ -128,13 +131,17 @@ export function mountInvite(root: HTMLElement): void {
             <span class="label">${escapeHtml(t(lang, 'venueLabel'))}</span>
             ${escapeHtml(wedding.venue_name)}<br>
             ${escapeHtml(wedding.address)}<br>
-            ${map ? `<a href="${escapeHtml(map)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${escapeHtml(t(lang, 'mapLink'))}<span class="sr-only"> (${escapeHtml(t(lang, 'newTab'))})</span></a>` : ''}
+            ${map ? `<a class="map-link" href="${escapeHtml(map)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${escapeHtml(t(lang, 'mapLink'))}<span class="sr-only"> (${escapeHtml(t(lang, 'newTab'))})</span></a>` : ''}
           </p>
           <p><span class="label">${escapeHtml(t(lang, 'deadlineLabel'))}</span> ${escapeHtml(formatDeadline(wedding.rsvp_deadline, lang))}${mark(wedding.venue_name)}</p>
         </div>
         ${responded ? `<p class="alert" role="status">${escapeHtml(t(lang, 'already'))}</p>` : ''}
       </main>
-      ${dock(responded ? t(lang, 'changeCta') : t(lang, 'confirmCta'), 'start')}`;
+      ${dock(
+        responded ? t(lang, 'changeCta') : t(lang, 'confirmCta'),
+        'start',
+        seatsForFamily(data.household.seats_allowed, lang),
+      )}`;
   };
 
   const seatRows = (): string =>
@@ -250,15 +257,29 @@ export function mountInvite(root: HTMLElement): void {
       ${dock(busy ? t(lang, 'sending') : t(lang, 'send'), 'send')}`;
   };
 
-  const thanksView = (data: InvitePayload): string => `
-    ${chrome(data.wedding.couple_names, true)}
+  const thanksView = (data: InvitePayload): string => {
+    const wedding = data.wedding;
+    const change = closed()
+      ? ''
+      : `<div class="confirm-actions"><button type="button" class="btn" id="primary-action" data-action="change">${escapeHtml(t(lang, 'changeCta'))}</button></div>`;
+    const calendar = yesGuests().length
+      ? `<p class="calendar-row"><button type="button" class="btn secondary" data-action="calendar">${escapeHtml(t(lang, 'addCalendar'))}</button></p>`
+      : '';
+    return `
+    ${chrome(wedding.couple_names, true)}
     <main>
       <h1>${escapeHtml(t(lang, 'thanksTitle'))}</h1>
-      ${yesGuests().length ? `<p style="margin-top:16px"><button type="button" class="btn secondary" data-action="calendar">${escapeHtml(t(lang, 'addCalendar'))}</button></p>` : ''}
-    </main>
-    ${closed() ? '' : dock(t(lang, 'changeCta'), 'change')}`;
+      <p class="reply-summary">${escapeHtml(replySummary(guests, lang))}</p>
+      <div class="stack">
+        <p><span class="label">${escapeHtml(t(lang, 'dateLabel'))}</span> ${escapeHtml(formatWeddingDate(wedding.wedding_date, lang))}${mark(wedding.venue_name)}</p>
+        <p><span class="label">${escapeHtml(t(lang, 'venueLabel'))}</span> ${escapeHtml(wedding.venue_name)}</p>
+      </div>
+      ${change}
+      ${calendar}
+    </main>`;
+  };
 
-  const readonlyList = (data: InvitePayload): string => {
+  const readonlyList = (): string => {
     if (!answered()) return `<p class="alert" role="status">${escapeHtml(t(lang, 'noReply'))}</p>`;
     return `<ul class="plain">${guests
       .map((guest) => {
@@ -274,7 +295,7 @@ export function mountInvite(root: HTMLElement): void {
       <h1 class="couple">${escapeHtml(data.wedding.couple_names)}</h1>
       <p class="hello">${escapeHtml(t(lang, 'hello', { household: data.household.household_name }))}</p>
       <p class="alert" role="status">${escapeHtml(t(lang, 'deadlineNotice'))}</p>
-      ${readonlyList(data)}
+      ${readonlyList()}
       ${yesGuests().length ? `<p style="margin-top:16px"><button type="button" class="btn secondary" data-action="calendar">${escapeHtml(t(lang, 'addCalendar'))}</button></p>` : ''}
     </main>`;
 
@@ -423,8 +444,8 @@ export function mountInvite(root: HTMLElement): void {
 
   const boot = async () => {
     const issue = tokenProblem(token);
-    if (issue) {
-      problem = issue;
+    if (issue || !token) {
+      problem = issue ?? 'missing';
       step = 'error';
       render();
       return;

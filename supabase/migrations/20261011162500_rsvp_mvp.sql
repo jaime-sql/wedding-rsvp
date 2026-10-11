@@ -87,6 +87,16 @@ create table public.message (
   constraint message_body_length check (char_length(body) <= 2000)
 );
 
+-- Failed admin passphrase tries. Five inside 15 minutes lock that wedding.
+create table public.admin_attempts (
+  id bigint generated always as identity primary key,
+  wedding_id uuid not null references public.wedding (id) on delete cascade,
+  attempted_at timestamptz not null default pg_catalog.now()
+);
+
+create index admin_attempts_wedding_attempted_idx
+  on public.admin_attempts (wedding_id, attempted_at);
+
 create or replace function public.set_guest_updated_at()
 returns trigger
 language plpgsql
@@ -402,7 +412,11 @@ as $$
 declare
   v_id uuid;
 begin
-  if pin is null or char_length(btrim(pin)) = 0 or char_length(pin) > 80 then
+  if pin is null
+    or char_length(pin) < 12
+    or char_length(pin) > 72
+    or char_length(btrim(pin)) < 12
+  then
     return null;
   end if;
 
@@ -415,22 +429,112 @@ begin
 end;
 $$;
 
+-- Lockout shared by admin_summary and admin_export. Not granted to anon.
+-- A wrong passphrase records one failure per wedding that is not already locked.
+-- After 5 failures in 15 minutes, every later call is refused until that window passes.
+create or replace function public.admin_gate(pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_matched uuid;
+  v_open integer;
+  v_failures integer;
+  v_remaining integer;
+begin
+  v_matched := public.wedding_for_pin(pin);
+
+  if v_matched is not null then
+    select count(*) into v_failures
+    from public.admin_attempts a
+    where a.wedding_id = v_matched
+      and a.attempted_at > pg_catalog.now() - interval '15 minutes';
+
+    if v_failures >= 5 then
+      return jsonb_build_object('ok', false, 'error', 'locked');
+    end if;
+
+    return jsonb_build_object('ok', true, 'wedding_id', v_matched);
+  end if;
+
+  select count(*) into v_open
+  from public.wedding w
+  where (
+    select count(*)
+    from public.admin_attempts a
+    where a.wedding_id = w.id
+      and a.attempted_at > pg_catalog.now() - interval '15 minutes'
+  ) < 5;
+
+  if coalesce(v_open, 0) = 0 and exists (select 1 from public.wedding) then
+    return jsonb_build_object('ok', false, 'error', 'locked');
+  end if;
+
+  if not exists (select 1 from public.wedding) then
+    perform pg_catalog.pg_sleep(1);
+    return jsonb_build_object('ok', false, 'error', 'wrong_passphrase', 'remaining', 0);
+  end if;
+
+  insert into public.admin_attempts (wedding_id, attempted_at)
+  select w.id, pg_catalog.now()
+  from public.wedding w
+  where (
+    select count(*)
+    from public.admin_attempts a
+    where a.wedding_id = w.id
+      and a.attempted_at > pg_catalog.now() - interval '15 minutes'
+  ) < 5;
+
+  perform pg_catalog.pg_sleep(1);
+
+  select min(5 - counted.n) into v_remaining
+  from (
+    select (
+      select count(*)
+      from public.admin_attempts a
+      where a.wedding_id = w.id
+        and a.attempted_at > pg_catalog.now() - interval '15 minutes'
+    ) as n
+    from public.wedding w
+  ) as counted;
+
+  return jsonb_build_object(
+    'ok', false,
+    'error', 'wrong_passphrase',
+    'remaining', greatest(coalesce(v_remaining, 0), 0)
+  );
+end;
+$$;
+
 create or replace function public.admin_summary(pin text)
 returns jsonb
 language plpgsql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
 declare
   v_wedding public.wedding;
   v_id uuid;
+  v_gate jsonb;
   v_base constant text := 'https://jaime-sql.github.io/wedding-rsvp';
 begin
-  v_id := public.wedding_for_pin(pin);
-  if v_id is null then
-    return null;
+  v_gate := public.admin_gate(pin);
+  if v_gate->>'error' = 'locked' then
+    return jsonb_build_object('ok', false, 'error', 'locked');
   end if;
+  if coalesce(v_gate->>'ok', '') <> 'true' then
+    return jsonb_build_object(
+      'ok', false,
+      'error', 'wrong_passphrase',
+      'remaining', coalesce((v_gate->>'remaining')::integer, 0)
+    );
+  end if;
+
+  v_id := (v_gate->>'wedding_id')::uuid;
 
   select * into v_wedding
   from public.wedding
@@ -487,7 +591,7 @@ begin
                     v_base || '/i/?t=' || i.token
                   )
                   else format(
-                    'Hola, familia %s. Os recordamos confirmar asistencia a la boda de %s: %s',
+                    'Hola, familia %s. Les recordamos confirmar asistencia a la boda de %s: %s',
                     i.household_name,
                     v_wedding.couple_names,
                     v_base || '/i/?t=' || i.token
@@ -522,23 +626,36 @@ $$;
 create or replace function public.admin_export(pin text)
 returns jsonb
 language plpgsql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
 declare
   v_wedding_id uuid;
+  v_gate jsonb;
 begin
-  v_wedding_id := public.wedding_for_pin(pin);
-  if v_wedding_id is null then
-    return null;
+  v_gate := public.admin_gate(pin);
+  if v_gate->>'error' = 'locked' then
+    return jsonb_build_object('ok', false, 'error', 'locked');
   end if;
+  if coalesce(v_gate->>'ok', '') <> 'true' then
+    return jsonb_build_object(
+      'ok', false,
+      'error', 'wrong_passphrase',
+      'remaining', coalesce((v_gate->>'remaining')::integer, 0)
+    );
+  end if;
+
+  v_wedding_id := (v_gate->>'wedding_id')::uuid;
 
   return (
     select coalesce(jsonb_agg(
       jsonb_build_object(
         'household_name', i.household_name,
-        'guest_name', g.name,
+        'guest_name', case
+          when g.is_plus_one and btrim(g.name) = '' then 'Acompañante de ' || i.household_name
+          else g.name
+        end,
         'status', g.status,
         'meal', g.meal,
         'allergies', g.allergies,
@@ -557,16 +674,19 @@ alter table public.wedding enable row level security;
 alter table public.invite enable row level security;
 alter table public.guest enable row level security;
 alter table public.message enable row level security;
+alter table public.admin_attempts enable row level security;
 
 revoke all on table public.wedding from public, anon, authenticated;
 revoke all on table public.invite from public, anon, authenticated;
 revoke all on table public.guest from public, anon, authenticated;
 revoke all on table public.message from public, anon, authenticated;
+revoke all on table public.admin_attempts from public, anon, authenticated;
 
 revoke all on function public.set_guest_updated_at() from public, anon, authenticated;
 revoke all on function public.generate_invite_token() from public, anon, authenticated;
 revoke all on function public.encode_uri_component(text) from public, anon, authenticated;
 revoke all on function public.wedding_for_pin(text) from public, anon, authenticated;
+revoke all on function public.admin_gate(text) from public, anon, authenticated;
 
 revoke all on function public.get_invite(text) from public, anon, authenticated;
 revoke all on function public.submit_rsvp(text, jsonb, text) from public, anon, authenticated;

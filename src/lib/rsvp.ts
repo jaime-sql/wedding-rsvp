@@ -42,6 +42,31 @@ export function formatPlaces(count: number, total: number, lang: Lang): string {
   return t(lang, key, { count, total });
 }
 
+export function seatsForFamily(count: number, lang: Lang): string {
+  const key = count === 1 ? 'seatForFamily' : 'seatsForFamily';
+  return t(lang, key, { count });
+}
+
+export function replySummary(
+  guests: Array<{ name: string; is_plus_one: boolean; status: RsvpStatus }>,
+  lang: Lang,
+): string {
+  const order: RsvpStatus[] = ['yes', 'no', 'pending'];
+  const parts: string[] = [];
+  for (const status of order) {
+    const names = guests
+      .filter((guest) => guest.status === status)
+      .map((guest) => {
+        const trimmed = guest.name.trim();
+        if (trimmed) return trimmed;
+        return guest.is_plus_one ? t(lang, 'plusOneLabel') : t(lang, 'dash');
+      });
+    if (names.length === 0) continue;
+    parts.push(`${names.join(', ')}: ${t(lang, status)}`);
+  }
+  return parts.join(' · ');
+}
+
 export function showPlusOneName(guest: { is_plus_one: boolean; status: string }): boolean {
   return guest.is_plus_one && guest.status === 'yes';
 }
@@ -108,7 +133,7 @@ export function reminderText(
   if (lang === 'en') {
     return `Hello, ${household} family. Please confirm your attendance at the wedding of ${couple}: ${link}`;
   }
-  return `Hola, familia ${household}. Os recordamos confirmar asistencia a la boda de ${couple}: ${link}`;
+  return `Hola, familia ${household}. Les recordamos confirmar asistencia a la boda de ${couple}: ${link}`;
 }
 
 export function whatsappReminder(text: string): string {
@@ -276,10 +301,35 @@ export function applySubmit(
   return { state: next, result: { ok: true, payload: toPayload(next, saved) } };
 }
 
-export function unlockAdmin(pin: string | null | undefined, expectedPin: string): boolean {
-  if (typeof pin !== 'string' || pin.length === 0 || pin.length > 80) return false;
-  if (pin.trim().length === 0) return false;
+export const ADMIN_ATTEMPT_LIMIT = 5;
+
+export function passphraseMatches(pin: string | null | undefined, expectedPin: string): boolean {
+  if (typeof pin !== 'string' || typeof expectedPin !== 'string') return false;
+  if (pin.length < 12 || pin.length > 72) return false;
+  if (pin.trim().length < 12 || expectedPin.length < 12) return false;
   return pin === expectedPin;
+}
+
+export function adminLockout(
+  recentFailures: number,
+  passphraseOk: boolean,
+): { ok: true } | { ok: false; error: 'locked' } | { ok: false; error: 'wrong_passphrase'; remaining: number } {
+  if (recentFailures >= ADMIN_ATTEMPT_LIMIT) return { ok: false, error: 'locked' };
+  if (passphraseOk) return { ok: true };
+  return {
+    ok: false,
+    error: 'wrong_passphrase',
+    remaining: Math.max(0, ADMIN_ATTEMPT_LIMIT - (recentFailures + 1)),
+  };
+}
+
+export function exportGuestName(name: string, isPlusOne: boolean, household: string): string {
+  if (isPlusOne && name.trim() === '') return `Acompañante de ${household}`;
+  return name;
+}
+
+export function unlockAdmin(pin: string | null | undefined, expectedPin: string): boolean {
+  return passphraseMatches(pin, expectedPin);
 }
 
 function countsOf(state: State): { yes: number; no: number; pending: number } {
@@ -342,7 +392,7 @@ export function adminExport(
     .flatMap((invite) =>
       invite.guests.map((guest) => ({
         household_name: invite.household_name,
-        guest_name: guest.name,
+        guest_name: exportGuestName(guest.name, guest.is_plus_one, invite.household_name),
         status: guest.status,
         meal: guest.meal,
         allergies: guest.allergies,
