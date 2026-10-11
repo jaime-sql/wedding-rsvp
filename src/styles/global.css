@@ -3,21 +3,26 @@
 @theme {
   --color-paper: #faf7f2;
   --color-ink: #2b2b2b;
-  --color-sage: #7a8f6a;
+  --color-olive: #556b2f;
+  --color-olive-press: #445624;
+  --color-olive-no: #3b4a20;
+  --color-panel: #eef1e4;
+  --color-on-olive: #ffffff;
   --font-sans: "Inter", sans-serif;
   --font-display: "Cormorant Garamond", Georgia, serif;
 }
 
 :root {
   color-scheme: light;
-  --paper: #faf7f2;
-  --ink: #2b2b2b;
-  --sage: #7a8f6a;
+  --paper: var(--color-paper);
+  --ink: var(--color-ink);
+  --olive: var(--color-olive);
+  --olive-press: var(--color-olive-press);
+  --olive-no: var(--color-olive-no);
+  --panel: var(--color-panel);
+  --on-olive: var(--color-on-olive);
   --line: #e4ddd2;
   --muted: #5c564c;
-  --button: #5e7350;
-  --button-hover: #4a5c40;
-  --button-ink: #ffffff;
 }
 
 * { box-sizing: border-box; }
@@ -99,11 +104,13 @@ main { flex: 1 0 auto; }
 .langs button[aria-pressed="true"] {
   font-weight: 700;
   text-decoration: underline;
+  text-decoration-color: var(--olive);
   text-underline-offset: 4px;
 }
 
 .couple {
   margin: 12px 0 8px;
+  color: var(--ink);
   font-family: "Cormorant Garamond", Georgia, serif;
   font-weight: 500;
   font-size: 3rem;
@@ -156,14 +163,15 @@ h2 { font-size: 1.2rem; margin-top: 8px; }
 }
 
 a {
-  color: var(--ink);
+  color: var(--olive);
+  text-decoration-color: var(--olive);
   text-underline-offset: 3px;
 }
 
 a.map-link {
   color: var(--ink);
   text-decoration-line: underline;
-  text-decoration-color: var(--sage);
+  text-decoration-color: var(--olive);
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
 }
@@ -185,7 +193,7 @@ a.map-link {
   flex: 1;
   min-height: 48px;
   border-radius: 10px;
-  border: 2px solid var(--button);
+  border: 2px solid var(--olive);
   background: transparent;
   color: var(--ink);
   font-size: 19px;
@@ -193,19 +201,28 @@ a.map-link {
 }
 
 .choice:hover {
-  border-color: var(--button-hover);
+  border-color: var(--olive-press);
 }
 
 .choice[aria-pressed="true"] {
-  background: var(--button);
-  border-color: var(--button);
-  color: var(--button-ink);
+  background: var(--olive);
+  border-color: var(--olive);
+  color: var(--on-olive);
 }
 
-.choice[aria-pressed="true"]:hover {
-  background: var(--button-hover);
-  border-color: var(--button-hover);
-  color: var(--button-ink);
+.choice[aria-pressed="true"]:hover,
+.choice[aria-pressed="true"]:active {
+  background: var(--olive-press);
+  border-color: var(--olive-press);
+  color: var(--on-olive);
+}
+
+.choice[data-action="no"][aria-pressed="true"],
+.choice[data-action="no"][aria-pressed="true"]:hover,
+.choice[data-action="no"][aria-pressed="true"]:active {
+  background: var(--olive-no);
+  border-color: var(--olive-no);
+  color: var(--on-olive);
 }
 
 .field { display: block; margin-top: 14px; font-weight: 600; }
@@ -230,8 +247,14 @@ textarea { min-height: 120px; resize: vertical; }
 .alert {
   margin: 12px 0 0;
   padding: 12px 14px;
-  background: #f3efe8;
-  border-left: 4px solid var(--ink);
+  background: var(--panel);
+  border-left: 4px solid var(--olive);
+}
+
+.alert-error {
+  background: #fbeaea;
+  border-left: 4px solid #b3261e;
+  color: #2b2b2b;
 }
 
 .plain { margin: 12px 0 0; padding-left: 1.1rem; display: grid; gap: 8px; }
@@ -257,27 +280,28 @@ textarea { min-height: 120px; resize: vertical; }
   min-height: 48px;
   padding: 12px 16px;
   border-radius: 10px;
-  border: 2px solid var(--button);
-  background: var(--button);
-  color: var(--button-ink);
+  border: 2px solid var(--olive);
+  background: var(--olive);
+  color: var(--on-olive);
   font-size: 19px;
   font-weight: 700;
   text-decoration: none;
   text-align: center;
 }
 
-.btn:hover {
-  background: var(--button-hover);
-  border-color: var(--button-hover);
-  color: var(--button-ink);
+.btn:hover,
+.btn:active {
+  background: var(--olive-press);
+  border-color: var(--olive-press);
+  color: var(--on-olive);
 }
 
 .btn:focus-visible {
-  outline: 3px solid var(--ink);
+  outline: 3px solid var(--olive);
   outline-offset: 3px;
-  background: var(--button-hover);
-  border-color: var(--button-hover);
-  color: var(--button-ink);
+  background: var(--olive-press);
+  border-color: var(--olive-press);
+  color: var(--on-olive);
 }
 
 .btn.secondary {
@@ -287,10 +311,11 @@ textarea { min-height: 120px; resize: vertical; }
 }
 
 .btn.secondary:hover,
-.btn.secondary:focus-visible {
+.btn.secondary:focus-visible,
+.btn.secondary:active {
   background: transparent;
   color: var(--ink);
-  border-color: var(--button-hover);
+  border-color: var(--olive-press);
 }
 
 .btn.compact {
@@ -299,6 +324,8 @@ textarea { min-height: 120px; resize: vertical; }
 }
 
 .btn:disabled { opacity: 0.7; }
+
+.btn.is-locked:disabled { opacity: 0.4; }
 
 .seat-note {
   margin: 0 0 10px;
@@ -326,9 +353,10 @@ textarea { min-height: 120px; resize: vertical; }
   padding: 0;
   border: 0;
   background: none;
-  color: var(--ink);
+  color: var(--olive);
   font-size: 17px;
   text-decoration: underline;
+  text-decoration-color: var(--olive);
   text-underline-offset: 3px;
 }
 
@@ -340,8 +368,8 @@ textarea { min-height: 120px; resize: vertical; }
 }
 
 .count-card {
-  background: #fff;
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--olive);
   border-radius: 12px;
   padding: 12px 6px;
   text-align: center;
@@ -367,29 +395,26 @@ textarea { min-height: 120px; resize: vertical; }
   min-height: 48px;
   padding: 0 14px;
   border-radius: 999px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--olive);
   background: transparent;
   color: var(--ink);
   font-size: 17px;
   font-weight: 700;
 }
 
-.filter[aria-pressed="true"] {
-  background: var(--button);
-  border-color: var(--button);
-  color: var(--button-ink);
-}
-
-.filter[aria-pressed="true"]:hover {
-  background: var(--button-hover);
-  border-color: var(--button-hover);
-  color: var(--button-ink);
+.filter[aria-pressed="true"],
+.filter[aria-pressed="true"]:hover,
+.filter[aria-pressed="true"]:active {
+  background: var(--olive);
+  border-color: var(--olive);
+  color: var(--on-olive);
 }
 
 .hcard {
   margin-top: 12px;
-  padding: 14px 0;
-  border-top: 1px solid var(--line);
+  padding: 14px;
+  background: var(--panel);
+  border-radius: 12px;
 }
 
 .hcard h2 { margin: 0 0 8px; }
@@ -431,7 +456,7 @@ textarea { min-height: 120px; resize: vertical; }
 }
 
 :focus-visible {
-  outline: 3px solid var(--ink);
+  outline: 3px solid var(--olive);
   outline-offset: 3px;
 }
 

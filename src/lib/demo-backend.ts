@@ -1,6 +1,6 @@
 import { DEMO_PASSPHRASE, createInitialState, type DemoState } from './demo-data';
 import { adminExport, adminLockout, adminSummary, applySubmit, getInvite, passphraseMatches } from './rsvp';
-import type { AdminExportResult, AdminSummaryResult, InvitePayload, SubmitResult } from './types';
+import type { AdminAuthError, AdminExportResult, AdminSummaryResult, InvitePayload, SubmitResult } from './types';
 
 const STORAGE_KEY = 'wedding-rsvp-demo-v1';
 
@@ -37,6 +37,12 @@ function loadState(storage: DemoStorage | null): DemoState {
 
 const FAILURE_WINDOW_MS = 15 * 60 * 1000;
 const recentFailures: number[] = [];
+
+function withUnlock(decision: AdminAuthError, failures: number[], now: number): AdminAuthError {
+  if (decision.error !== 'locked') return decision;
+  const oldest = failures.length > 0 ? Math.min(...failures) : now;
+  return { ...decision, locked_until: new Date(oldest + FAILURE_WINDOW_MS).toISOString() };
+}
 
 function pruneFailures(now: number): number {
   const fresh = recentFailures.filter((at) => now - at < FAILURE_WINDOW_MS);
@@ -80,7 +86,7 @@ export function createDemoApi(storage: DemoStorage | null = null): DemoApi {
           recentFailures.push(now);
           await pauseOnFailure();
         }
-        return decision;
+        return withUnlock(decision, recentFailures, now);
       }
       const summary = adminSummary(state, pin, origin, basePath, DEMO_PASSPHRASE);
       if (!summary) return { ok: false, error: 'wrong_passphrase', remaining: 0 };
@@ -94,7 +100,7 @@ export function createDemoApi(storage: DemoStorage | null = null): DemoApi {
           recentFailures.push(now);
           await pauseOnFailure();
         }
-        return decision;
+        return withUnlock(decision, recentFailures, now);
       }
       const rows = adminExport(state, pin, DEMO_PASSPHRASE);
       if (!rows) return { ok: false, error: 'wrong_passphrase', remaining: 0 };

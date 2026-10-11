@@ -98,12 +98,23 @@ export function sampleMarks(venueName: string): boolean {
 export function formatWeddingDate(isoDate: string, lang: Lang): string {
   const [year, month, day] = isoDate.slice(0, 10).split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
-  return new Intl.DateTimeFormat(lang === 'es' ? 'es-ES' : 'en-GB', {
+  if (lang === 'en') {
+    return new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(date);
+  }
+  const formatted = new Intl.DateTimeFormat('es-ES', {
+    weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
   }).format(date);
+  return formatted.replace(/,\s*/, ' ');
 }
 
 export function formatDeadline(iso: string, lang: Lang): string {
@@ -113,7 +124,7 @@ export function formatDeadline(iso: string, lang: Lang): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'Europe/Madrid',
+    timeZone: 'America/El_Salvador',
     hourCycle: 'h23',
   }).format(new Date(iso));
 }

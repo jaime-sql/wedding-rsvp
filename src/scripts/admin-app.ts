@@ -1,6 +1,6 @@
 import { demoMode, fetchAdminExport, fetchAdminSummary } from '../lib/api';
 import { guestsToCsv } from '../lib/csv';
-import { readLang, t, writeLang, type Lang } from '../lib/i18n';
+import { adminAuthMessage, readLang, t, writeLang, type Lang } from '../lib/i18n';
 import { formatDeadline, formatWeddingDate, sampleMarks, safeHttpUrl } from '../lib/rsvp';
 import type { AdminAuthError, AdminSummary, RsvpStatus, SummaryGuest, SummaryHousehold } from '../lib/types';
 import { downloadText, escapeHtml } from './download';
@@ -46,12 +46,7 @@ export function mountAdmin(root: HTMLElement): void {
 
   const authMessage = (): string => {
     if (!authError) return '';
-    if (authError.error === 'locked') return t(lang, 'adminLocked');
-    if (authError.error === 'wrong_passphrase') {
-      const key = authError.remaining === 1 ? 'wrongPassphraseOne' : 'wrongPassphrase';
-      return t(lang, key, { remaining: authError.remaining });
-    }
-    return t(lang, 'adminEmpty');
+    return adminAuthMessage(lang, authError);
   };
 
   const loginView = (): string => `
@@ -59,14 +54,14 @@ export function mountAdmin(root: HTMLElement): void {
     <main>
       <h1>${escapeHtml(t(lang, 'adminTitle'))}</h1>
       <p class="lede">${escapeHtml(t(lang, 'adminLead'))}</p>
-      ${authError ? `<p class="alert" role="alert">${escapeHtml(authMessage())}</p>` : ''}
+      ${authError ? `<p class="alert alert-error" role="alert">${escapeHtml(authMessage())}</p>` : ''}
       <label class="field" for="pin">${escapeHtml(t(lang, 'pinLabel'))}
         <input id="pin" data-field="pin" type="password" autocomplete="current-password" maxlength="72" value="${escapeHtml(pin)}" ${authError ? 'aria-invalid="true"' : ''}>
       </label>
       ${samplePin ? `<p class="muted" style="margin-top:8px">${escapeHtml(t(lang, 'pinHint', { pin: samplePin }))}</p>` : ''}
     </main>
     <div class="dock">
-      <button type="button" class="btn" id="primary-action" data-action="enter" ${busy ? 'disabled' : ''}>${escapeHtml(t(lang, 'enter'))}</button>
+      <button type="button" class="btn${authError?.error === 'locked' ? ' is-locked' : ''}" id="primary-action" data-action="enter" ${busy || authError?.error === 'locked' ? 'disabled' : ''}>${escapeHtml(t(lang, 'enter'))}</button>
     </div>`;
 
   const mark = (venue: string): string =>
@@ -146,9 +141,9 @@ export function mountAdmin(root: HTMLElement): void {
         <h1 class="couple">${escapeHtml(data.couple_names)}</h1>
         <p class="lede">${escapeHtml(t(lang, 'adminTitle'))}</p>
         <div class="stack">
-          <p><span class="label">${escapeHtml(t(lang, 'dateLabel'))}</span> ${escapeHtml(formatWeddingDate(data.wedding_date, lang))}${mark(data.venue_name)}</p>
+          <p><span class="label">${escapeHtml(t(lang, 'dateLabel'))}</span> ${escapeHtml(formatWeddingDate(data.wedding_date, lang))}</p>
           <p><span class="label">${escapeHtml(t(lang, 'venueLabel'))}</span> ${escapeHtml(data.venue_name)}</p>
-          <p><span class="label">${escapeHtml(t(lang, 'deadlineLabel'))}</span> ${escapeHtml(formatDeadline(data.rsvp_deadline, lang))}${mark(data.venue_name)}</p>
+          <p><span class="label">${escapeHtml(t(lang, 'deadlineLabel'))}</span> ${escapeHtml(formatDeadline(data.rsvp_deadline, lang))} (${escapeHtml(t(lang, 'deadlineZone'))})${mark(data.venue_name)}</p>
         </div>
         <section class="counts" aria-label="${escapeHtml(t(lang, 'adminTitle'))}">
           <article class="count-card"><strong>${data.counts.yes}</strong><span>${escapeHtml(t(lang, 'countsYes'))}</span></article>

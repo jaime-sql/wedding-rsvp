@@ -95,7 +95,7 @@ export interface ExportRow {
 
 export type AdminAuthError =
   | { ok: false; error: 'wrong_passphrase'; remaining: number }
-  | { ok: false; error: 'locked' }
+  | { ok: false; error: 'locked'; locked_until?: string }
   | { ok: false; error: 'unavailable' };
 
 export type AdminSummaryResult = { ok: true; summary: AdminSummary } | AdminAuthError;

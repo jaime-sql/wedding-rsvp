@@ -126,14 +126,14 @@ export function mountInvite(root: HTMLElement): void {
         <h1 class="couple">${escapeHtml(wedding.couple_names)}</h1>
         <p class="hello">${escapeHtml(t(lang, 'hello', { household: data.household.household_name }))}</p>
         <div class="stack">
-          <p><span class="label">${escapeHtml(t(lang, 'dateLabel'))}</span> ${escapeHtml(formatWeddingDate(wedding.wedding_date, lang))}${mark(wedding.venue_name)}</p>
+          <p><span class="label">${escapeHtml(t(lang, 'dateLabel'))}</span> ${escapeHtml(formatWeddingDate(wedding.wedding_date, lang))}</p>
           <p>
             <span class="label">${escapeHtml(t(lang, 'venueLabel'))}</span>
             ${escapeHtml(wedding.venue_name)}<br>
             ${escapeHtml(wedding.address)}<br>
             ${map ? `<a class="map-link" href="${escapeHtml(map)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${escapeHtml(t(lang, 'mapLink'))}<span class="sr-only"> (${escapeHtml(t(lang, 'newTab'))})</span></a>` : ''}
           </p>
-          <p><span class="label">${escapeHtml(t(lang, 'deadlineLabel'))}</span> ${escapeHtml(formatDeadline(wedding.rsvp_deadline, lang))}${mark(wedding.venue_name)}</p>
+          <p><span class="label">${escapeHtml(t(lang, 'deadlineLabel'))}</span> ${escapeHtml(formatDeadline(wedding.rsvp_deadline, lang))} (${escapeHtml(t(lang, 'deadlineZone'))})${mark(wedding.venue_name)}</p>
         </div>
         ${responded ? `<p class="alert" role="status">${escapeHtml(t(lang, 'already'))}</p>` : ''}
       </main>
@@ -271,7 +271,7 @@ export function mountInvite(root: HTMLElement): void {
       <h1>${escapeHtml(t(lang, 'thanksTitle'))}</h1>
       <p class="reply-summary">${escapeHtml(replySummary(guests, lang))}</p>
       <div class="stack">
-        <p><span class="label">${escapeHtml(t(lang, 'dateLabel'))}</span> ${escapeHtml(formatWeddingDate(wedding.wedding_date, lang))}${mark(wedding.venue_name)}</p>
+        <p><span class="label">${escapeHtml(t(lang, 'dateLabel'))}</span> ${escapeHtml(formatWeddingDate(wedding.wedding_date, lang))}</p>
         <p><span class="label">${escapeHtml(t(lang, 'venueLabel'))}</span> ${escapeHtml(wedding.venue_name)}</p>
       </div>
       ${change}
