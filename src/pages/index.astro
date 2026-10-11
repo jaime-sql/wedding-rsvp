@@ -1,0 +1,60 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { TOKENS } from '../lib/demo-data';
+
+const demoMode = !import.meta.env.PUBLIC_SUPABASE_URL || !import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+const rawBase = import.meta.env.BASE_URL;
+const base = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
+const samples = [
+  { household: 'García', token: TOKENS.garcia },
+  { household: 'López', token: TOKENS.lopez },
+  { household: 'Martín', token: TOKENS.martin },
+];
+---
+
+<Layout title="Elena y Mateo">
+  <div class="shell" id="home">
+    <header class="top">
+      <div class="langs" role="group" aria-label="Idioma" data-i18n-aria="langGroup">
+        <button type="button" data-lang="es" aria-pressed="true">ES</button>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+    </header>
+    <main>
+      <h1 class="couple">Elena y Mateo</h1>
+      <p class="lede" data-i18n="homeLede">La confirmación es solo para vuestra familia.</p>
+      <p data-i18n="homeBody">Abrid el enlace personal que os enviamos. Desde aquí no se puede buscar otra invitación.</p>
+      {
+        demoMode && (
+          <>
+            <h2 data-i18n="homeDemoTitle">Invitaciones de ejemplo</h2>
+            <ul class="link-list">
+              {samples.map((sample) => (
+                <li>
+                  <a data-family={sample.household} href={`${base}i/?t=${sample.token}`}>
+                    Familia {sample.household}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </>
+        )
+      }
+    </main>
+    {
+      demoMode && (
+        <div class="dock">
+          <a class="btn" data-i18n="homeCta" href={`${base}i/?t=${TOKENS.garcia}`}>
+            Confirmar asistencia
+          </a>
+        </div>
+      )
+    }
+  </div>
+</Layout>
+
+<script>
+  import { mountHome } from '../scripts/home';
+  const home = document.getElementById('home');
+  if (home) mountHome(home);
+</script>
