@@ -1,0 +1,13 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Resumen">
+  <div class="shell shell-admin" id="app"></div>
+</Layout>
+
+<script>
+  import { mountAdmin } from '../../scripts/admin-app';
+  const root = document.getElementById('app');
+  if (root) mountAdmin(root);
+</script>

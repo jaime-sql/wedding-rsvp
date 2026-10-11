@@ -1,0 +1,13 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout title="Invitación">
+  <div class="shell" id="app"></div>
+</Layout>
+
+<script>
+  import { mountInvite } from '../../scripts/invite-app';
+  const root = document.getElementById('app');
+  if (root) mountInvite(root);
+</script>
