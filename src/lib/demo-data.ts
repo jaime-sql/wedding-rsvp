@@ -87,12 +87,12 @@ function withoutPosition(rows: Array<GuestRecord & { position: number }>): Guest
 export function createInitialState(): DemoState {
   const wedding: WeddingInfo = {
     id: DEMO_WEDDING_ID,
-    couple_names: 'Elena y Mateo',
-    wedding_date: '2027-06-20',
+    couple_names: 'Diana y Marcelo',
+    wedding_date: '2026-12-05',
     venue_name: 'Hacienda Los Olivos (DEMO)',
     address: 'Ctra. de Carmona km 4, Sevilla (DEMO)',
     map_url: 'https://maps.google.com/?q=Hacienda+Los+Olivos+Sevilla',
-    rsvp_deadline: '2027-05-01T21:59:00.000Z',
+    rsvp_deadline: '2026-11-14T21:59:00.000Z',
     meal_enabled: false,
     meal_options: MEAL_OPTIONS.map((option) => ({ ...option })),
     default_lang: 'es',

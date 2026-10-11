@@ -4,7 +4,7 @@ export const es = {
   langEs: 'ES',
   langEn: 'EN',
   skip: 'Saltar al contenido',
-  docTitleHome: 'Elena y Mateo',
+  docTitleHome: 'Diana y Marcelo',
   docTitleInvite: 'Invitación',
   docTitleAdmin: 'Resumen',
   homeLede: 'La confirmación es solo para su familia.',
@@ -68,6 +68,7 @@ export const es = {
   pinHint: 'Clave de ejemplo: {pin}',
   wrongPassphrase: 'Clave incorrecta. Le quedan {remaining} intentos.',
   wrongPassphraseOne: 'Clave incorrecta. Le queda {remaining} intento.',
+  lastAttemptFailed: 'Último intento fallido',
   adminLocked: 'Demasiados intentos. Intente de nuevo en 15 minutos.',
   enter: 'Entrar',
   adminEmpty: 'No hay datos para mostrar.',
@@ -110,7 +111,7 @@ export const en: { [K in MessageKey]: string } = {
   langEs: 'ES',
   langEn: 'EN',
   skip: 'Skip to content',
-  docTitleHome: 'Elena y Mateo',
+  docTitleHome: 'Diana y Marcelo',
   docTitleInvite: 'Invitation',
   docTitleAdmin: 'Summary',
   homeLede: 'The reply is only for your family.',
@@ -172,6 +173,7 @@ export const en: { [K in MessageKey]: string } = {
   pinHint: 'Sample passphrase: {pin}',
   wrongPassphrase: 'Wrong passphrase. You have {remaining} attempts left.',
   wrongPassphraseOne: 'Wrong passphrase. You have {remaining} attempt left.',
+  lastAttemptFailed: 'Last attempt failed',
   adminLocked: 'Too many attempts. Try again in 15 minutes.',
   enter: 'Enter',
   adminEmpty: 'Nothing to show.',
@@ -206,6 +208,22 @@ export const en: { [K in MessageKey]: string } = {
 };
 
 const tables: Record<Lang, { [K in MessageKey]: string }> = { es, en };
+
+export function adminAuthMessage(
+  lang: Lang,
+  failure:
+    | { error: 'wrong_passphrase'; remaining: number }
+    | { error: 'locked' }
+    | { error: 'unavailable' },
+): string {
+  if (failure.error === 'locked') return t(lang, 'adminLocked');
+  if (failure.error === 'wrong_passphrase') {
+    if (failure.remaining <= 0) return t(lang, 'lastAttemptFailed');
+    if (failure.remaining === 1) return t(lang, 'wrongPassphraseOne', { remaining: failure.remaining });
+    return t(lang, 'wrongPassphrase', { remaining: failure.remaining });
+  }
+  return t(lang, 'adminEmpty');
+}
 
 export function t(
   lang: Lang,

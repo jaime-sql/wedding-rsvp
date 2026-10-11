@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { guestsToCsv } from '../src/lib/csv';
 import { DEMO_PIN, TOKENS, createInitialState } from '../src/lib/demo-data';
 import { buildIcs } from '../src/lib/ics';
-import { en, es, type MessageKey } from '../src/lib/i18n';
+import { hashCaller, callerAddress } from '../src/lib/admin-caller';
+import { handleAdminRequest } from '../src/lib/admin-function';
+import { adminAuthMessage, en, es, type MessageKey } from '../src/lib/i18n';
 import {
   adminExport,
   adminLockout,
@@ -156,8 +158,8 @@ describe('seats, deadline, and idempotent submits', () => {
 
   it('rejects submissions after the deadline without writing', () => {
     const state = createInitialState();
-    expect(isPastDeadline(state.wedding.rsvp_deadline, new Date('2027-05-01T21:59:00.000Z'))).toBe(false);
-    expect(isPastDeadline(state.wedding.rsvp_deadline, new Date('2027-05-01T21:59:00.001Z'))).toBe(true);
+    expect(isPastDeadline(state.wedding.rsvp_deadline, new Date('2026-11-14T21:59:00.000Z'))).toBe(false);
+    expect(isPastDeadline(state.wedding.rsvp_deadline, new Date('2026-11-14T21:59:00.001Z'))).toBe(true);
     const outcome = applySubmit(state, TOKENS.garcia, garciaPayload('Ana Ruiz', 'no'), 'tarde', new Date('2028-01-01T00:00:00Z'));
     expect(outcome.result).toEqual({ ok: false, error: 'deadline' });
     expect(outcome.state).toBe(state);
@@ -237,7 +239,7 @@ describe('admin pin', () => {
     expect(text).toContain('Hola, familia García');
     expect(text).toContain('Les recordamos');
     expect(text).not.toContain('Os recordamos');
-    expect(reminderText('es', 'García', 'Elena y Mateo', `${origin}${base}/i/?t=${TOKENS.garcia}`)).toContain(
+    expect(reminderText('es', 'García', 'Diana y Marcelo', `${origin}${base}/i/?t=${TOKENS.garcia}`)).toContain(
       'Les recordamos',
     );
     const english = new URL(martin?.whatsapp_url ?? '').searchParams.get('text');
@@ -267,9 +269,21 @@ describe('copy, csv, and calendar', () => {
     expect(en.demoStrip).toBe('Sample data');
     expect(es.wrongPassphrase).toBe('Clave incorrecta. Le quedan {remaining} intentos.');
     expect(es.wrongPassphraseOne).toBe('Clave incorrecta. Le queda {remaining} intento.');
+    expect(es.lastAttemptFailed).toBe('Último intento fallido');
+    expect(en.lastAttemptFailed).toBe('Last attempt failed');
     expect(es.adminLocked).toBe('Demasiados intentos. Intente de nuevo en 15 minutos.');
     expect(en.wrongPassphrase).toBe('Wrong passphrase. You have {remaining} attempts left.');
     expect(en.adminLocked).toBe('Too many attempts. Try again in 15 minutes.');
+    expect(adminAuthMessage('es', { error: 'wrong_passphrase', remaining: 0 })).toBe('Último intento fallido');
+    expect(adminAuthMessage('en', { error: 'wrong_passphrase', remaining: 0 })).toBe('Last attempt failed');
+    expect(adminAuthMessage('es', { error: 'wrong_passphrase', remaining: 4 })).toBe(
+      'Clave incorrecta. Le quedan 4 intentos.',
+    );
+    expect(adminAuthMessage('es', { error: 'wrong_passphrase', remaining: 1 })).toBe(
+      'Clave incorrecta. Le queda 1 intento.',
+    );
+    expect(es.docTitleHome).toBe('Diana y Marcelo');
+    expect(en.docTitleHome).toBe('Diana y Marcelo');
     const spanish = Object.values(es).join('\n');
     for (const old of ['Abrid', 'Elegid', 'Os recordamos', 'vuestra', 'Podéis', 'Volved', 'Entrad', 'Revisad', 'Intentad', 'Escribid']) {
       expect(spanish).not.toContain(old);
@@ -303,12 +317,12 @@ describe('copy, csv, and calendar', () => {
 
   it('builds an all-day calendar event for the sample date', () => {
     const ics = buildIcs(createInitialState().wedding, now);
-    expect(ics).toContain('DTSTART;VALUE=DATE:20270620');
-    expect(ics).toContain('SUMMARY:Elena y Mateo');
-    expect(formatWeddingDate('2027-06-20', 'es')).toBe('20 de junio de 2027');
-    expect(formatWeddingDate('2027-06-20', 'en')).toBe('20 June 2027');
-    expect(formatDeadline('2027-05-01T21:59:00.000Z', 'es')).toContain('2027');
-    expect(formatDeadline('2027-05-01T21:59:00.000Z', 'es')).toContain('23:59');
+    expect(ics).toContain('DTSTART;VALUE=DATE:20261205');
+    expect(ics).toContain('SUMMARY:Diana y Marcelo');
+    expect(formatWeddingDate('2026-12-05', 'es')).toBe('sábado 5 de diciembre de 2026');
+    expect(formatWeddingDate('2026-12-05', 'en')).toBe('Saturday, December 5, 2026');
+    expect(formatDeadline('2026-11-14T21:59:00.000Z', 'es')).toContain('2026');
+    expect(formatDeadline('2026-11-14T21:59:00.000Z', 'es')).toContain('22:59');
   });
 });
 
@@ -335,10 +349,17 @@ describe('repo contract', () => {
       expect(migration).toContain(`alter table public.${table} enable row level security`);
       expect(migration).toContain(`revoke all on table public.${table} from public, anon, authenticated`);
     }
-    for (const fn of ['get_invite', 'submit_rsvp', 'admin_summary', 'admin_export']) {
+    for (const fn of ['get_invite', 'submit_rsvp']) {
       expect(migration).toContain(`function public.${fn}`);
       expect(migration).toContain(`grant execute on function public.${fn}`);
+      expect(migration).toContain(`to anon`);
     }
+    expect(migration).toContain('grant execute on function public.get_invite(text) to anon');
+    expect(migration).toContain('grant execute on function public.submit_rsvp(text, jsonb, text) to anon');
+    expect(migration).toContain('grant execute on function public.admin_summary(text, text) to service_role');
+    expect(migration).toContain('grant execute on function public.admin_export(text, text) to service_role');
+    expect(migration).not.toContain('grant execute on function public.admin_summary(text) to anon');
+    expect(migration).not.toContain('grant execute on function public.admin_export(text) to anon');
     expect(migration).toContain('security definer');
     expect(migration).toContain('set search_path = \'\'');
     expect(migration).toContain('extensions.crypt');
@@ -346,16 +367,48 @@ describe('repo contract', () => {
     expect(migration).toContain("error', 'deadline'");
     expect(migration).toContain("error', 'seats'");
     expect(migration).not.toContain('execute format');
-    expect(migration).toContain('admin_attempts');
+    expect(migration).toContain('ip_hash');
+    expect(migration).toContain("interval '15 minutes'");
+    expect(migration).toContain("interval '1 hour'");
+    expect(migration).toContain('>= 100');
     expect(migration).toContain('pg_catalog.pg_sleep(1)');
+    expect(migration).toContain('pg_catalog.pg_sleep(3)');
     expect(migration).toContain("'wrong_passphrase'");
     expect(migration).toContain("'locked'");
     expect(migration).toContain('Les recordamos');
     expect(migration).toContain('Acompañante de ');
     expect(migration).not.toContain('grant execute on function public.admin_gate');
+    const upgrade = readFileSync('supabase/migrations/20261011203000_admin_lockout_per_caller.sql', 'utf8');
+    expect(upgrade).toContain('drop function if exists public.admin_summary(text)');
+    expect(upgrade).toContain('grant execute on function public.admin_summary(text, text) to service_role');
+    expect(upgrade).not.toContain('to anon;');
     const sqlTest = readFileSync('supabase/tests/rsvp.sql', 'utf8');
-    expect(sqlTest).toContain('6th call is refused even with the right passphrase');
-    expect(sqlTest).toContain("public.admin_summary('hacienda-demo')");
+    expect(sqlTest).toContain('Same caller is refused even with the right passphrase');
+    expect(sqlTest).toContain('A different caller is not locked');
+    expect(sqlTest).toContain('hourly ceiling must not hard-lock');
+    expect(sqlTest).toContain('anon called admin_summary');
+    expect(sqlTest).toContain("public.admin_summary('hacienda-demo', 'caller-a')");
+    const api = readFileSync('src/lib/api.ts', 'utf8');
+    expect(api).toContain("functions.invoke('admin'");
+    expect(api).not.toContain("rpc('admin_summary'");
+    expect(api).not.toContain("rpc('admin_export'");
+    const edge = readFileSync('supabase/functions/admin/index.ts', 'utf8');
+    const caller = readFileSync('src/lib/admin-caller.ts', 'utf8');
+    expect(edge).toContain('handleAdminRequest');
+    expect(edge).toContain('SUPABASE_SERVICE_ROLE_KEY');
+    expect(edge).toContain('caller_hash');
+    expect(edge).toContain('admin_summary');
+    expect(edge).toContain('admin_export');
+    expect(caller).toContain("headers.get('cf-connecting-ip')");
+    expect(caller).toContain("headers.get('x-forwarded-for')");
+    const css = readFileSync('src/styles/global.css', 'utf8');
+    expect(css).toContain('--color-olive: #556b2f');
+    expect(css).toContain('--color-olive-press: #445624');
+    expect(css).toContain('--color-olive-no: #3b4a20');
+    expect(css).toContain('--color-panel: #eef1e4');
+    expect(css).toContain('--color-paper: #faf7f2');
+    expect(css).toContain('--color-ink: #2b2b2b');
+    expect(css.toLowerCase()).not.toContain('sage');
   });
 
   it('seeds the demo wedding, three invites, and a hashed PIN', () => {
@@ -363,10 +416,63 @@ describe('repo contract', () => {
     expect(seed).toContain(TOKENS.lopez);
     expect(seed).toContain(TOKENS.martin);
     expect(seed).toContain('Hacienda Los Olivos (DEMO)');
-    expect(seed).toContain('2027-06-20');
-    expect(seed).toContain('2027-05-01T21:59:00Z');
+    expect(seed).toContain('Diana y Marcelo');
+    expect(seed).toContain('2026-12-05');
+    expect(seed).toContain('2026-11-14T21:59:00Z');
+    expect(seed).not.toContain('Elena y Mateo');
     expect(seed).toContain("extensions.crypt('hacienda-demo'");
     expect(seed).toContain('false');
     expect(seed).toContain('Lucía García');
+  });
+});
+
+describe('admin edge function', () => {
+  it('reads cf-connecting-ip before x-forwarded-for and hashes the caller', async () => {
+    const cloudflare = await hashCaller('203.0.113.5');
+    const forwarded = await hashCaller('198.51.100.8');
+    expect(cloudflare).toMatch(/^[a-f0-9]{64}$/);
+    expect(cloudflare).not.toBe(forwarded);
+    expect(callerAddress(new Headers({ 'cf-connecting-ip': '203.0.113.5', 'x-forwarded-for': '198.51.100.8' }))).toBe(
+      '203.0.113.5',
+    );
+    expect(callerAddress(new Headers({ 'x-forwarded-for': ' 198.51.100.8, 10.0.0.1 ' }))).toBe('198.51.100.8');
+    expect(callerAddress(new Headers())).toBe('unknown');
+
+    const calls: Array<{ action: string; pin: string; callerHash: string }> = [];
+    const response = await handleAdminRequest(
+      new Request('https://example.test/admin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.8, 10.0.0.1' },
+        body: JSON.stringify({ action: 'summary', pin: 'hacienda-demo' }),
+      }),
+      async (action, pin, callerHash) => {
+        calls.push({ action, pin, callerHash });
+        return { error: 'wrong_passphrase', remaining: 0 };
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(calls).toEqual([{ action: 'summary', pin: 'hacienda-demo', callerHash: forwarded }]);
+    expect(await response.json()).toEqual({ error: 'wrong_passphrase', remaining: 0 });
+  });
+
+  it('calls admin_export with the cloudflare address and hides rpc failures', async () => {
+    const response = await handleAdminRequest(
+      new Request('https://example.test/admin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.9' },
+        body: JSON.stringify({ action: 'export', pin: 'hacienda-demo' }),
+      }),
+      async () => {
+        throw new Error('database refused the service role call');
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: false, error: 'unavailable' });
+
+    const options = await handleAdminRequest(new Request('https://example.test/admin', { method: 'OPTIONS' }), async () => {
+      throw new Error('should not call');
+    });
+    expect(options.status).toBe(204);
+    expect(options.headers.get('access-control-allow-origin')).toBe('*');
   });
 });

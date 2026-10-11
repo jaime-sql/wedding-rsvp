@@ -1,6 +1,6 @@
 import { demoMode, fetchAdminExport, fetchAdminSummary } from '../lib/api';
 import { guestsToCsv } from '../lib/csv';
-import { readLang, t, writeLang, type Lang } from '../lib/i18n';
+import { adminAuthMessage, readLang, t, writeLang, type Lang } from '../lib/i18n';
 import { formatDeadline, formatWeddingDate, sampleMarks, safeHttpUrl } from '../lib/rsvp';
 import type { AdminAuthError, AdminSummary, RsvpStatus, SummaryGuest, SummaryHousehold } from '../lib/types';
 import { downloadText, escapeHtml } from './download';
@@ -46,12 +46,7 @@ export function mountAdmin(root: HTMLElement): void {
 
   const authMessage = (): string => {
     if (!authError) return '';
-    if (authError.error === 'locked') return t(lang, 'adminLocked');
-    if (authError.error === 'wrong_passphrase') {
-      const key = authError.remaining === 1 ? 'wrongPassphraseOne' : 'wrongPassphrase';
-      return t(lang, key, { remaining: authError.remaining });
-    }
-    return t(lang, 'adminEmpty');
+    return adminAuthMessage(lang, authError);
   };
 
   const loginView = (): string => `
@@ -146,7 +141,7 @@ export function mountAdmin(root: HTMLElement): void {
         <h1 class="couple">${escapeHtml(data.couple_names)}</h1>
         <p class="lede">${escapeHtml(t(lang, 'adminTitle'))}</p>
         <div class="stack">
-          <p><span class="label">${escapeHtml(t(lang, 'dateLabel'))}</span> ${escapeHtml(formatWeddingDate(data.wedding_date, lang))}${mark(data.venue_name)}</p>
+          <p><span class="label">${escapeHtml(t(lang, 'dateLabel'))}</span> ${escapeHtml(formatWeddingDate(data.wedding_date, lang))}</p>
           <p><span class="label">${escapeHtml(t(lang, 'venueLabel'))}</span> ${escapeHtml(data.venue_name)}</p>
           <p><span class="label">${escapeHtml(t(lang, 'deadlineLabel'))}</span> ${escapeHtml(formatDeadline(data.rsvp_deadline, lang))}${mark(data.venue_name)}</p>
         </div>

@@ -95,15 +95,21 @@ export async function sendRsvp(
   return { ok: false, error: 'invalid' };
 }
 
+async function callAdmin(action: 'summary' | 'export', pin: string): Promise<unknown> {
+  const { data, error } = await client().functions.invoke('admin', {
+    body: { action, pin },
+  });
+  if (error || data == null) return { ok: false, error: 'unavailable' };
+  return data;
+}
+
 export async function fetchAdminSummary(pin: string): Promise<AdminSummaryResult> {
   if (!supabaseUrl || !supabaseAnonKey) {
     const { demoApi } = await import('./demo-backend');
     const origin = typeof location === 'undefined' ? 'https://jaime-sql.github.io' : location.origin;
     return demoApi().adminSummary(pin, origin, import.meta.env.BASE_URL);
   }
-  const { data, error } = await client().rpc('admin_summary', { pin });
-  if (error) return { ok: false, error: 'unavailable' };
-  return asSummaryResult(data);
+  return asSummaryResult(await callAdmin('summary', pin));
 }
 
 export async function fetchAdminExport(pin: string): Promise<AdminExportResult> {
@@ -111,7 +117,5 @@ export async function fetchAdminExport(pin: string): Promise<AdminExportResult> 
     const { demoApi } = await import('./demo-backend');
     return demoApi().adminExport(pin);
   }
-  const { data, error } = await client().rpc('admin_export', { pin });
-  if (error) return { ok: false, error: 'unavailable' };
-  return asExportResult(data);
+  return asExportResult(await callAdmin('export', pin));
 }
