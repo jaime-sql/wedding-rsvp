@@ -94,7 +94,7 @@ create table public.message (
 
 -- Failed admin passphrase tries, one row per caller hash.
 -- Five failures in 15 minutes lock that (wedding, ip_hash) only.
--- One hundred failures in an hour slow every caller and never hard-lock the wedding.
+-- Thirty failures in an hour slow every caller more as the count grows, up to 10 seconds, and never hard-lock the wedding.
 create table public.admin_attempts (
   id bigint generated always as identity primary key,
   wedding_id uuid not null references public.wedding (id) on delete cascade,
@@ -446,7 +446,7 @@ $$;
 
 -- Lockout shared by admin_summary and admin_export. Not granted to anon.
 -- Five failures in 15 minutes lock that caller hash only.
--- One hundred failures in an hour add a delay and never hard-lock the wedding.
+-- Thirty failures in an hour add an increasing delay up to 10 seconds and never hard-lock the wedding.
 create or replace function public.admin_gate(pin text, caller_hash text)
 returns jsonb
 language plpgsql
@@ -461,6 +461,7 @@ declare
   v_failures integer;
   v_hour integer;
   v_remaining integer;
+  v_until timestamptz;
 begin
   v_hash := nullif(btrim(coalesce(caller_hash, '')), '');
   if v_hash is null
@@ -484,12 +485,23 @@ begin
     where a.wedding_id = v_matched
       and a.attempted_at > pg_catalog.now() - interval '1 hour';
 
-    if coalesce(v_hour, 0) >= 100 then
-      perform pg_catalog.pg_sleep(3);
+    if coalesce(v_hour, 0) >= 30 then
+      -- Two seconds at the 30th failure, then one more second each, at most 10. Never a hard lock.
+      perform pg_catalog.pg_sleep(least(10, greatest(2, v_hour - 28)));
     end if;
 
     if v_failures >= 5 then
-      return jsonb_build_object('ok', false, 'error', 'locked');
+      select min(a.attempted_at) + interval '15 minutes' into v_until
+      from public.admin_attempts a
+      where a.wedding_id = v_matched
+        and a.ip_hash = v_hash
+        and a.attempted_at > pg_catalog.now() - interval '15 minutes';
+
+      return jsonb_build_object(
+        'ok', false,
+        'error', 'locked',
+        'locked_until', v_until
+      );
     end if;
 
     return jsonb_build_object('ok', true, 'wedding_id', v_matched);
@@ -514,11 +526,20 @@ begin
       group by a.wedding_id
     ) as per_wedding;
 
-    if coalesce(v_hour, 0) >= 100 then
-      perform pg_catalog.pg_sleep(3);
+    if coalesce(v_hour, 0) >= 30 then
+      perform pg_catalog.pg_sleep(least(10, greatest(2, v_hour - 28)));
     end if;
 
-    return jsonb_build_object('ok', false, 'error', 'locked');
+    select min(a.attempted_at) + interval '15 minutes' into v_until
+    from public.admin_attempts a
+    where a.ip_hash = v_hash
+      and a.attempted_at > pg_catalog.now() - interval '15 minutes';
+
+    return jsonb_build_object(
+      'ok', false,
+      'error', 'locked',
+      'locked_until', v_until
+    );
   end if;
 
   if not exists (select 1 from public.wedding) then
@@ -537,8 +558,6 @@ begin
       and a.attempted_at > pg_catalog.now() - interval '15 minutes'
   ) < 5;
 
-  perform pg_catalog.pg_sleep(1);
-
   select coalesce(max(per_wedding.n), 0) into v_hour
   from (
     select count(*)::integer as n
@@ -547,8 +566,10 @@ begin
     group by a.wedding_id
   ) as per_wedding;
 
-  if coalesce(v_hour, 0) >= 100 then
-    perform pg_catalog.pg_sleep(3);
+  if coalesce(v_hour, 0) >= 30 then
+    perform pg_catalog.pg_sleep(least(10, greatest(2, v_hour - 28)));
+  else
+    perform pg_catalog.pg_sleep(1);
   end if;
 
   select min(5 - counted.n) into v_remaining
@@ -586,7 +607,11 @@ declare
 begin
   v_gate := public.admin_gate(pin, caller_hash);
   if v_gate->>'error' = 'locked' then
-    return jsonb_build_object('ok', false, 'error', 'locked');
+    return jsonb_build_object(
+      'ok', false,
+      'error', 'locked',
+      'locked_until', v_gate->'locked_until'
+    );
   end if;
   if coalesce(v_gate->>'ok', '') <> 'true' then
     return jsonb_build_object(
@@ -698,7 +723,11 @@ declare
 begin
   v_gate := public.admin_gate(pin, caller_hash);
   if v_gate->>'error' = 'locked' then
-    return jsonb_build_object('ok', false, 'error', 'locked');
+    return jsonb_build_object(
+      'ok', false,
+      'error', 'locked',
+      'locked_until', v_gate->'locked_until'
+    );
   end if;
   if coalesce(v_gate->>'ok', '') <> 'true' then
     return jsonb_build_object(
@@ -748,6 +777,36 @@ revoke all on function public.set_guest_updated_at() from public, anon, authenti
 revoke all on function public.generate_invite_token() from public, anon, authenticated;
 revoke all on function public.encode_uri_component(text) from public, anon, authenticated;
 revoke all on function public.wedding_for_pin(text) from public, anon, authenticated;
+-- Operator helper for the SQL editor. A real passphrase is 20 to 72 characters.
+create or replace function public.set_admin_passphrase(wedding_id uuid, passphrase text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if set_admin_passphrase.passphrase is null
+    or char_length(set_admin_passphrase.passphrase) < 20
+    or char_length(set_admin_passphrase.passphrase) > 72
+    or char_length(btrim(set_admin_passphrase.passphrase)) < 20
+  then
+    raise exception 'admin passphrase must be 20 to 72 characters';
+  end if;
+
+  update public.wedding
+  set admin_pin_hash = extensions.crypt(
+    set_admin_passphrase.passphrase,
+    extensions.gen_salt('bf')
+  )
+  where public.wedding.id = set_admin_passphrase.wedding_id;
+
+  if not found then
+    raise exception 'wedding not found';
+  end if;
+end;
+$$;
+
+revoke all on function public.set_admin_passphrase(uuid, text) from public, anon, authenticated;
 revoke all on function public.admin_gate(text, text) from public, anon, authenticated;
 
 revoke all on function public.get_invite(text) from public, anon, authenticated;

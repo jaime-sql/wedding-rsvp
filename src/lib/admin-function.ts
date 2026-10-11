@@ -16,7 +16,11 @@ function json(body: unknown, status = 200): Response {
   return Response.json(body, { status, headers: adminCorsHeaders });
 }
 
-export async function handleAdminRequest(req: Request, call: AdminCaller): Promise<Response> {
+export async function handleAdminRequest(
+  req: Request,
+  call: AdminCaller,
+  salt: string | undefined,
+): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: adminCorsHeaders });
   }
@@ -41,8 +45,13 @@ export async function handleAdminRequest(req: Request, call: AdminCaller): Promi
     return json({ ok: false, error: 'unavailable' }, 400);
   }
 
+  const trimmedSalt = salt?.trim() ?? '';
+  if (!trimmedSalt) {
+    return json({ ok: false, error: 'config', message: 'ADMIN_IP_SALT is not set' }, 500);
+  }
+
   try {
-    const callerHash = await hashCaller(callerAddress(req.headers));
+    const callerHash = await hashCaller(callerAddress(req.headers), trimmedSalt);
     const data = await call(action, pin, callerHash);
     if (data === undefined || data === null) return json({ ok: false, error: 'unavailable' });
     return json(data);

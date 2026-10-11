@@ -237,7 +237,7 @@ begin
   end if;
 
   v := public.admin_summary('hacienda-demo', 'caller-a');
-  if v->>'error' <> 'locked' then
+  if v->>'error' <> 'locked' or v->>'locked_until' is null then
     raise exception 'same caller should be locked even with the right passphrase, got %', v;
   end if;
   if jsonb_exists(v, 'counts') or jsonb_exists(v, 'households') or jsonb_exists(v, 'couple_names') then
@@ -268,14 +268,14 @@ begin
 
   insert into public.admin_attempts (wedding_id, ip_hash, attempted_at)
   select 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'flood-' || g::text, pg_catalog.now()
-  from generate_series(1, 100) as g;
+  from generate_series(1, 24) as g;
 
   v_started := clock_timestamp();
   v := public.admin_summary('hacienda-demo', 'caller-d');
   if v->>'error' = 'locked' or v->'counts' is null or v->>'couple_names' <> 'Diana y Marcelo' then
     raise exception 'hourly ceiling must not hard-lock, got %', v;
   end if;
-  if clock_timestamp() - v_started < interval '2 seconds' then
+  if clock_timestamp() - v_started < interval '1 second' then
     raise exception 'hourly ceiling should delay the caller';
   end if;
 end
@@ -360,6 +360,14 @@ begin
   end;
 
   begin
+    perform public.set_admin_passphrase('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'carta nube rio loma mesa');
+    raise exception 'anon called set_admin_passphrase';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+
+  begin
     perform public.admin_export('hacienda-demo', 'caller-a');
     raise exception 'anon called admin_export';
   exception
@@ -391,5 +399,43 @@ end
 $$;
 
 reset role;
+
+do $$
+declare
+  v_old text;
+  v jsonb;
+begin
+  select admin_pin_hash into v_old
+  from public.wedding
+  where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+
+  begin
+    perform public.set_admin_passphrase(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+      'too-short'
+    );
+    raise exception 'short passphrase was accepted';
+  exception
+    when raise_exception then
+      if sqlerrm not like '%20 to 72%' then
+        raise exception 'unexpected passphrase error: %', sqlerrm;
+      end if;
+  end;
+
+  if (select admin_pin_hash from public.wedding where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1') is distinct from v_old then
+    raise exception 'a short passphrase changed the hash';
+  end if;
+
+  perform public.set_admin_passphrase(
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+    'carta nube rio loma mesa'
+  );
+
+  v := public.admin_summary('carta nube rio loma mesa', 'helper-caller');
+  if v->>'couple_names' <> 'Diana y Marcelo' then
+    raise exception 'set_admin_passphrase did not store the new passphrase, got %', v;
+  end if;
+end
+$$;
 
 rollback;

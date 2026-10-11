@@ -1,8 +1,6 @@
 -- Sample wedding. DEMO values only. Apply after the migration, and change the
--- passphrase before anyone real uses the site. It must be at least 12 characters:
---   update public.wedding
---   set admin_pin_hash = extensions.crypt('the-real-passphrase', extensions.gen_salt('bf'))
---   where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+-- passphrase before anyone real uses the site. Use set_admin_passphrase, which
+-- requires 20 to 72 characters. See the README for a 5-word diceware phrase.
 --
 -- Demo passphrase: hacienda-demo
 -- Invite links (production base):
@@ -34,7 +32,7 @@ insert into public.wedding (
   'Hacienda Los Olivos (DEMO)',
   'Ctra. de Carmona km 4, Sevilla (DEMO)',
   'https://maps.google.com/?q=Hacienda+Los+Olivos+Sevilla',
-  '2026-11-14T21:59:00Z',
+  '2026-11-15T05:59:00Z',
   false,
   '[
     {"id":"carne","es":"Carne","en":"Meat"},

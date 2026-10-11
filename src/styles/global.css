@@ -251,6 +251,12 @@ textarea { min-height: 120px; resize: vertical; }
   border-left: 4px solid var(--olive);
 }
 
+.alert-error {
+  background: #fbeaea;
+  border-left: 4px solid #b3261e;
+  color: #2b2b2b;
+}
+
 .plain { margin: 12px 0 0; padding-left: 1.1rem; display: grid; gap: 8px; }
 
 .review-block { margin-top: 16px; }
@@ -318,6 +324,8 @@ textarea { min-height: 120px; resize: vertical; }
 }
 
 .btn:disabled { opacity: 0.7; }
+
+.btn.is-locked:disabled { opacity: 0.4; }
 
 .seat-note {
   margin: 0 0 10px;
@@ -404,8 +412,9 @@ textarea { min-height: 120px; resize: vertical; }
 
 .hcard {
   margin-top: 12px;
-  padding: 14px 0;
-  border-top: 1px solid var(--line);
+  padding: 14px;
+  background: var(--panel);
+  border-radius: 12px;
 }
 
 .hcard h2 { margin: 0 0 8px; }

@@ -92,7 +92,7 @@ export function createInitialState(): DemoState {
     venue_name: 'Hacienda Los Olivos (DEMO)',
     address: 'Ctra. de Carmona km 4, Sevilla (DEMO)',
     map_url: 'https://maps.google.com/?q=Hacienda+Los+Olivos+Sevilla',
-    rsvp_deadline: '2026-11-14T21:59:00.000Z',
+    rsvp_deadline: '2026-11-15T05:59:00.000Z',
     meal_enabled: false,
     meal_options: MEAL_OPTIONS.map((option) => ({ ...option })),
     default_lang: 'es',

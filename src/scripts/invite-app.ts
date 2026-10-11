@@ -133,7 +133,7 @@ export function mountInvite(root: HTMLElement): void {
             ${escapeHtml(wedding.address)}<br>
             ${map ? `<a class="map-link" href="${escapeHtml(map)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">${escapeHtml(t(lang, 'mapLink'))}<span class="sr-only"> (${escapeHtml(t(lang, 'newTab'))})</span></a>` : ''}
           </p>
-          <p><span class="label">${escapeHtml(t(lang, 'deadlineLabel'))}</span> ${escapeHtml(formatDeadline(wedding.rsvp_deadline, lang))}${mark(wedding.venue_name)}</p>
+          <p><span class="label">${escapeHtml(t(lang, 'deadlineLabel'))}</span> ${escapeHtml(formatDeadline(wedding.rsvp_deadline, lang))} (${escapeHtml(t(lang, 'deadlineZone'))})${mark(wedding.venue_name)}</p>
         </div>
         ${responded ? `<p class="alert" role="status">${escapeHtml(t(lang, 'already'))}</p>` : ''}
       </main>

@@ -23,6 +23,7 @@ export const es = {
   dateLabel: 'Fecha',
   venueLabel: 'Lugar',
   deadlineLabel: 'Límite de confirmación',
+  deadlineZone: 'hora de El Salvador',
   demoMark: 'DEMO',
   mapLink: 'Ver mapa',
   newTab: 'se abre en una pestaña nueva',
@@ -70,6 +71,7 @@ export const es = {
   wrongPassphraseOne: 'Clave incorrecta. Le queda {remaining} intento.',
   lastAttemptFailed: 'Último intento fallido',
   adminLocked: 'Demasiados intentos. Intente de nuevo en 15 minutos.',
+  adminLockedUntil: 'Demasiados intentos. Intente de nuevo a las {time}.',
   enter: 'Entrar',
   adminEmpty: 'No hay datos para mostrar.',
   countsYes: 'Sí',
@@ -128,6 +130,7 @@ export const en: { [K in MessageKey]: string } = {
   dateLabel: 'Date',
   venueLabel: 'Venue',
   deadlineLabel: 'RSVP deadline',
+  deadlineZone: 'El Salvador time',
   demoMark: 'DEMO',
   mapLink: 'View map',
   newTab: 'opens in a new tab',
@@ -175,6 +178,7 @@ export const en: { [K in MessageKey]: string } = {
   wrongPassphraseOne: 'Wrong passphrase. You have {remaining} attempt left.',
   lastAttemptFailed: 'Last attempt failed',
   adminLocked: 'Too many attempts. Try again in 15 minutes.',
+  adminLockedUntil: 'Too many attempts. Try again at {time}.',
   enter: 'Enter',
   adminEmpty: 'Nothing to show.',
   countsYes: 'Yes',
@@ -209,14 +213,29 @@ export const en: { [K in MessageKey]: string } = {
 
 const tables: Record<Lang, { [K in MessageKey]: string }> = { es, en };
 
+function elSalvadorClock(iso: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: 'America/El_Salvador',
+  }).formatToParts(new Date(iso));
+  const hour = parts.find((part) => part.type === 'hour')?.value ?? '00';
+  const minute = parts.find((part) => part.type === 'minute')?.value ?? '00';
+  return `${hour}:${minute}`;
+}
+
 export function adminAuthMessage(
   lang: Lang,
   failure:
     | { error: 'wrong_passphrase'; remaining: number }
-    | { error: 'locked' }
+    | { error: 'locked'; locked_until?: string }
     | { error: 'unavailable' },
 ): string {
-  if (failure.error === 'locked') return t(lang, 'adminLocked');
+  if (failure.error === 'locked') {
+    if (failure.locked_until) return t(lang, 'adminLockedUntil', { time: elSalvadorClock(failure.locked_until) });
+    return t(lang, 'adminLocked');
+  }
   if (failure.error === 'wrong_passphrase') {
     if (failure.remaining <= 0) return t(lang, 'lastAttemptFailed');
     if (failure.remaining === 1) return t(lang, 'wrongPassphraseOne', { remaining: failure.remaining });

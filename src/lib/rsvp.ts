@@ -124,7 +124,7 @@ export function formatDeadline(iso: string, lang: Lang): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'Europe/Madrid',
+    timeZone: 'America/El_Salvador',
     hourCycle: 'h23',
   }).format(new Date(iso));
 }

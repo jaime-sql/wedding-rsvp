@@ -158,8 +158,8 @@ describe('seats, deadline, and idempotent submits', () => {
 
   it('rejects submissions after the deadline without writing', () => {
     const state = createInitialState();
-    expect(isPastDeadline(state.wedding.rsvp_deadline, new Date('2026-11-14T21:59:00.000Z'))).toBe(false);
-    expect(isPastDeadline(state.wedding.rsvp_deadline, new Date('2026-11-14T21:59:00.001Z'))).toBe(true);
+    expect(isPastDeadline(state.wedding.rsvp_deadline, new Date('2026-11-15T05:59:00.000Z'))).toBe(false);
+    expect(isPastDeadline(state.wedding.rsvp_deadline, new Date('2026-11-15T05:59:00.001Z'))).toBe(true);
     const outcome = applySubmit(state, TOKENS.garcia, garciaPayload('Ana Ruiz', 'no'), 'tarde', new Date('2028-01-01T00:00:00Z'));
     expect(outcome.result).toEqual({ ok: false, error: 'deadline' });
     expect(outcome.state).toBe(state);
@@ -272,8 +272,17 @@ describe('copy, csv, and calendar', () => {
     expect(es.lastAttemptFailed).toBe('Último intento fallido');
     expect(en.lastAttemptFailed).toBe('Last attempt failed');
     expect(es.adminLocked).toBe('Demasiados intentos. Intente de nuevo en 15 minutos.');
+    expect(es.adminLockedUntil).toBe('Demasiados intentos. Intente de nuevo a las {time}.');
+    expect(es.deadlineZone).toBe('hora de El Salvador');
     expect(en.wrongPassphrase).toBe('Wrong passphrase. You have {remaining} attempts left.');
     expect(en.adminLocked).toBe('Too many attempts. Try again in 15 minutes.');
+    expect(en.adminLockedUntil).toBe('Too many attempts. Try again at {time}.');
+    expect(adminAuthMessage('es', { error: 'locked', locked_until: '2026-11-15T05:59:00.000Z' })).toBe(
+      'Demasiados intentos. Intente de nuevo a las 23:59.',
+    );
+    expect(adminAuthMessage('en', { error: 'locked', locked_until: '2026-11-15T05:59:00.000Z' })).toBe(
+      'Too many attempts. Try again at 23:59.',
+    );
     expect(adminAuthMessage('es', { error: 'wrong_passphrase', remaining: 0 })).toBe('Último intento fallido');
     expect(adminAuthMessage('en', { error: 'wrong_passphrase', remaining: 0 })).toBe('Last attempt failed');
     expect(adminAuthMessage('es', { error: 'wrong_passphrase', remaining: 4 })).toBe(
@@ -321,8 +330,9 @@ describe('copy, csv, and calendar', () => {
     expect(ics).toContain('SUMMARY:Diana y Marcelo');
     expect(formatWeddingDate('2026-12-05', 'es')).toBe('sábado 5 de diciembre de 2026');
     expect(formatWeddingDate('2026-12-05', 'en')).toBe('Saturday, December 5, 2026');
-    expect(formatDeadline('2026-11-14T21:59:00.000Z', 'es')).toContain('2026');
-    expect(formatDeadline('2026-11-14T21:59:00.000Z', 'es')).toContain('22:59');
+    expect(formatDeadline('2026-11-15T05:59:00.000Z', 'es')).toContain('2026');
+    expect(formatDeadline('2026-11-15T05:59:00.000Z', 'es')).toContain('23:59');
+    expect(formatDeadline('2026-11-15T05:59:00.000Z', 'en')).toContain('23:59');
   });
 });
 
@@ -370,9 +380,12 @@ describe('repo contract', () => {
     expect(migration).toContain('ip_hash');
     expect(migration).toContain("interval '15 minutes'");
     expect(migration).toContain("interval '1 hour'");
-    expect(migration).toContain('>= 100');
+    expect(migration).toContain('>= 30');
     expect(migration).toContain('pg_catalog.pg_sleep(1)');
-    expect(migration).toContain('pg_catalog.pg_sleep(3)');
+    expect(migration).toContain('least(10, greatest(2, v_hour - 28))');
+    expect(migration).toContain("'locked_until'");
+    expect(migration).toContain('set_admin_passphrase');
+    expect(migration).toContain('char_length(set_admin_passphrase.passphrase) < 20');
     expect(migration).toContain("'wrong_passphrase'");
     expect(migration).toContain("'locked'");
     expect(migration).toContain('Les recordamos');
@@ -399,8 +412,10 @@ describe('repo contract', () => {
     expect(edge).toContain('caller_hash');
     expect(edge).toContain('admin_summary');
     expect(edge).toContain('admin_export');
-    expect(caller).toContain("headers.get('cf-connecting-ip')");
+    expect(caller).not.toContain("headers.get('cf-connecting-ip')");
     expect(caller).toContain("headers.get('x-forwarded-for')");
+    expect(caller).toContain('HMAC');
+    expect(edge).toContain('ADMIN_IP_SALT');
     const css = readFileSync('src/styles/global.css', 'utf8');
     expect(css).toContain('--color-olive: #556b2f');
     expect(css).toContain('--color-olive-press: #445624');
@@ -408,6 +423,10 @@ describe('repo contract', () => {
     expect(css).toContain('--color-panel: #eef1e4');
     expect(css).toContain('--color-paper: #faf7f2');
     expect(css).toContain('--color-ink: #2b2b2b');
+    expect(css).toContain('#fbeaea');
+    expect(css).toContain('#b3261e');
+    expect(css).toContain('opacity: 0.4');
+    expect(css).toContain('background: var(--panel)');
     expect(css.toLowerCase()).not.toContain('sage');
   });
 
@@ -418,7 +437,7 @@ describe('repo contract', () => {
     expect(seed).toContain('Hacienda Los Olivos (DEMO)');
     expect(seed).toContain('Diana y Marcelo');
     expect(seed).toContain('2026-12-05');
-    expect(seed).toContain('2026-11-14T21:59:00Z');
+    expect(seed).toContain('2026-11-15T05:59:00Z');
     expect(seed).not.toContain('Elena y Mateo');
     expect(seed).toContain("extensions.crypt('hacienda-demo'");
     expect(seed).toContain('false');
@@ -427,51 +446,90 @@ describe('repo contract', () => {
 });
 
 describe('admin edge function', () => {
-  it('reads cf-connecting-ip before x-forwarded-for and hashes the caller', async () => {
-    const cloudflare = await hashCaller('203.0.113.5');
-    const forwarded = await hashCaller('198.51.100.8');
-    expect(cloudflare).toMatch(/^[a-f0-9]{64}$/);
-    expect(cloudflare).not.toBe(forwarded);
-    expect(callerAddress(new Headers({ 'cf-connecting-ip': '203.0.113.5', 'x-forwarded-for': '198.51.100.8' }))).toBe(
-      '203.0.113.5',
+  const salt = 'test-admin-ip-salt';
+
+  it('maps spoofed leftmost X-Forwarded-For hops to the same rightmost caller', async () => {
+    const lastHop = '203.0.113.50';
+    const expected = await hashCaller(lastHop, salt);
+    expect(expected).toMatch(/^[a-f0-9]{64}$/);
+    expect(await hashCaller(lastHop, 'other-salt')).not.toBe(expected);
+    expect(callerAddress(new Headers({ 'cf-connecting-ip': '1.2.3.4', 'x-forwarded-for': '9.9.9.9, 203.0.113.50' }))).toBe(
+      lastHop,
     );
-    expect(callerAddress(new Headers({ 'x-forwarded-for': ' 198.51.100.8, 10.0.0.1 ' }))).toBe('198.51.100.8');
+    expect(callerAddress(new Headers({ 'x-forwarded-for': ' 198.51.100.8, 10.0.0.1 ' }))).toBe('10.0.0.1');
+    expect(callerAddress(new Headers({ 'cf-connecting-ip': '203.0.113.5' }))).toBe('unknown');
     expect(callerAddress(new Headers())).toBe('unknown');
 
-    const calls: Array<{ action: string; pin: string; callerHash: string }> = [];
-    const response = await handleAdminRequest(
-      new Request('https://example.test/admin', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.8, 10.0.0.1' },
-        body: JSON.stringify({ action: 'summary', pin: 'hacienda-demo' }),
-      }),
-      async (action, pin, callerHash) => {
-        calls.push({ action, pin, callerHash });
-        return { error: 'wrong_passphrase', remaining: 0 };
-      },
-    );
-    expect(response.status).toBe(200);
-    expect(calls).toEqual([{ action: 'summary', pin: 'hacienda-demo', callerHash: forwarded }]);
-    expect(await response.json()).toEqual({ error: 'wrong_passphrase', remaining: 0 });
+    const seen: string[] = [];
+    for (const forwarded of ['1.1.1.1, 203.0.113.50', '8.8.8.8, 203.0.113.50']) {
+      const response = await handleAdminRequest(
+        new Request('https://example.test/admin', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'cf-connecting-ip': '198.51.100.9',
+            'x-forwarded-for': forwarded,
+          },
+          body: JSON.stringify({ action: 'summary', pin: 'hacienda-demo' }),
+        }),
+        async (_action, _pin, callerHash) => {
+          seen.push(callerHash);
+          return { error: 'wrong_passphrase', remaining: 0 };
+        },
+        salt,
+      );
+      expect(response.status).toBe(200);
+    }
+    expect(seen).toEqual([expected, expected]);
   });
 
-  it('calls admin_export with the cloudflare address and hides rpc failures', async () => {
+  it('refuses admin requests when ADMIN_IP_SALT is missing', async () => {
+    let called = false;
+    const request = () =>
+      new Request('https://example.test/admin', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.50' },
+        body: JSON.stringify({ action: 'summary', pin: 'hacienda-demo' }),
+      });
+    const response = await handleAdminRequest(
+      request(),
+      async () => {
+        called = true;
+        return { ok: true };
+      },
+      undefined,
+    );
+    expect(called).toBe(false);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ ok: false, error: 'config', message: 'ADMIN_IP_SALT is not set' });
+
+    const blank = await handleAdminRequest(request(), async () => ({ ok: true }), '   ');
+    expect(blank.status).toBe(500);
+    expect(await blank.json()).toEqual({ ok: false, error: 'config', message: 'ADMIN_IP_SALT is not set' });
+  });
+
+  it('hides rpc failures and answers the preflight without a salt', async () => {
     const response = await handleAdminRequest(
       new Request('https://example.test/admin', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'cf-connecting-ip': '203.0.113.9' },
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9' },
         body: JSON.stringify({ action: 'export', pin: 'hacienda-demo' }),
       }),
       async () => {
         throw new Error('database refused the service role call');
       },
+      salt,
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: false, error: 'unavailable' });
 
-    const options = await handleAdminRequest(new Request('https://example.test/admin', { method: 'OPTIONS' }), async () => {
-      throw new Error('should not call');
-    });
+    const options = await handleAdminRequest(
+      new Request('https://example.test/admin', { method: 'OPTIONS' }),
+      async () => {
+        throw new Error('should not call');
+      },
+      undefined,
+    );
     expect(options.status).toBe(204);
     expect(options.headers.get('access-control-allow-origin')).toBe('*');
   });

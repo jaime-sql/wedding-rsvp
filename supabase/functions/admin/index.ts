@@ -30,6 +30,6 @@ const handler = (req: Request): Promise<Response> =>
     });
     if (error) throw new Error('admin rpc failed');
     return data;
-  });
+  }, readEnv('ADMIN_IP_SALT'));
 
 export default { fetch: handler };

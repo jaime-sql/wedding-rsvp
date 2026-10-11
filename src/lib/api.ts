@@ -27,7 +27,10 @@ function asAuth(data: unknown): AdminAuthError {
     return { ok: false, error: 'unavailable' };
   }
   const record = data as Record<string, unknown>;
-  if (record.error === 'locked') return { ok: false, error: 'locked' };
+  if (record.error === 'locked') {
+    const lockedUntil = typeof record.locked_until === 'string' ? record.locked_until : undefined;
+    return { ok: false, error: 'locked', locked_until: lockedUntil };
+  }
   if (record.error === 'wrong_passphrase') {
     const remaining = typeof record.remaining === 'number' ? record.remaining : Number(record.remaining);
     return {
